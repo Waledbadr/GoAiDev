@@ -1,0 +1,6 @@
+{
+  "name": "Accommodation & Studio Management",
+  "description": "Comprehensive accommodation, workers, inventory, contracts, and timesheet management application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
