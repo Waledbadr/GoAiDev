@@ -75,6 +75,9 @@
     "xlsx": "^0.18.5",
     "zod": "^3.24.2"
   },
+  "overrides": {
+    "jose": "$jose"
+  },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.20.2",
     "@types/node": "^20",
