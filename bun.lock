@@ -42,6 +42,7 @@
         "firebase-admin": "^13.4.0",
         "genkit": "^1.14.1",
         "html2canvas": "^1.4.1",
+        "jose": "^6.2.6",
         "lucide-react": "^0.475.0",
         "next": "^15.5.9",
         "patch-package": "^8.0.0",
@@ -1750,7 +1751,7 @@
 
     "jiti": ["jiti@1.21.7", "", { "bin": "bin/jiti.js" }, ""],
 
-    "jose": ["jose@6.2.4", "", {}, ""],
+    "jose": ["jose@6.2.6", "", {}, "sha512-HwMtbJjMw8rC8dUTwCNilHJD+fxTeKM3JV1eprSmTjS41qwXSSt6exJXgyPK1QOu0jB9eDYLESRDkB3qaT3jnw=="],
 
     "js-tokens": ["js-tokens@4.0.0", "", {}, ""],
 
@@ -2491,6 +2492,8 @@
     "@inquirer/external-editor/iconv-lite": ["iconv-lite@0.7.3", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, ""],
 
     "@modelcontextprotocol/sdk/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, ""],
+
+    "@modelcontextprotocol/sdk/jose": ["jose@6.2.4", "", {}, ""],
 
     "@next/eslint-plugin-next/fast-glob": ["fast-glob@3.3.1", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, ""],
 
