@@ -72,6 +72,9 @@
       },
     },
   },
+  "overrides": {
+    "jose": "^6.2.6",
+  },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, ""],
 
@@ -557,9 +560,21 @@
 
     "@next/eslint-plugin-next": ["@next/eslint-plugin-next@15.5.3", "", { "dependencies": { "fast-glob": "3.3.1" } }, ""],
 
+    "@next/swc-darwin-arm64": ["@next/swc-darwin-arm64@15.5.21", "", { "os": "darwin", "cpu": "arm64" }, "sha512-ZfjqPEdi6TRC/fWx7UDbwb1fbVgyh2uD5tVTRKIDZDlYM+UNuE/LafDG2fwuAoZilADpABh46OY/F5qf9JjqLQ=="],
+
+    "@next/swc-darwin-x64": ["@next/swc-darwin-x64@15.5.21", "", { "os": "darwin", "cpu": "x64" }, "sha512-TlCf1NpxgQLzTrexuev75xwmNCJMd1/qkJpTVP1GRRcih93hlIBn1P72hkh8T0gnRFr6BmWksQtbyG3jT6jnww=="],
+
+    "@next/swc-linux-arm64-gnu": ["@next/swc-linux-arm64-gnu@15.5.21", "", { "os": "linux", "cpu": "arm64" }, "sha512-LXRsq1p+HvHSi7ygwNcSEEcK0zuo5jS75ZlqFHtOH+LF7qntXAJVJxah+1Pi/GyBm7EpkwU7m4EgbvIKrMqm9A=="],
+
+    "@next/swc-linux-arm64-musl": ["@next/swc-linux-arm64-musl@15.5.21", "", { "os": "linux", "cpu": "arm64" }, "sha512-hyGixhFxpDKjqoev6l4KlcRBlt9AXWrGhDZwmwg49sMJM5tnKQPSi+SEj9+e5n+l/bthRGZUdh59GKIs6lQPRw=="],
+
     "@next/swc-linux-x64-gnu": ["@next/swc-linux-x64-gnu@15.5.21", "", { "os": "linux", "cpu": "x64" }, ""],
 
     "@next/swc-linux-x64-musl": ["@next/swc-linux-x64-musl@15.5.21", "", { "os": "linux", "cpu": "x64" }, ""],
+
+    "@next/swc-win32-arm64-msvc": ["@next/swc-win32-arm64-msvc@15.5.21", "", { "os": "win32", "cpu": "arm64" }, "sha512-tNGNOlT0Wn7E4IMsSnufjXN/l2L2/AGdLLpa2vzS89SYCBuihgLn3ngLsIrvndAnWo9nAkus+4gZHTI/Ijx9HA=="],
+
+    "@next/swc-win32-x64-msvc": ["@next/swc-win32-x64-msvc@15.5.21", "", { "os": "win32", "cpu": "x64" }, "sha512-DmIdWmC9p4rdNIiQqo8ap0+Cnj6kKtTZnuSCxoYydSc8sgpDgAg9wFhxplunak9imLV0pTvc5WVCOHwm5eHLtQ=="],
 
     "@noble/ciphers": ["@noble/ciphers@1.3.0", "", {}, "sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw=="],
 
@@ -1907,7 +1922,7 @@
 
     "neo-async": ["neo-async@2.6.2", "", {}, ""],
 
-    "next": ["next@15.5.21", "", { "dependencies": { "@next/env": "15.5.21", "@swc/helpers": "0.5.15", "caniuse-lite": "^1.0.30001579", "postcss": "8.4.31", "styled-jsx": "5.1.6" }, "optionalDependencies": { "@next/swc-linux-x64-gnu": "15.5.21", "@next/swc-linux-x64-musl": "15.5.21", "sharp": "^0.34.3" }, "peerDependencies": { "@opentelemetry/api": "^1.1.0", "@playwright/test": "^1.51.1", "babel-plugin-react-compiler": "*", "react": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0", "react-dom": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0", "sass": "^1.3.0" }, "optionalPeers": ["@playwright/test", "babel-plugin-react-compiler", "sass"], "bin": "dist/bin/next" }, ""],
+    "next": ["next@15.5.21", "", { "dependencies": { "@next/env": "15.5.21", "@swc/helpers": "0.5.15", "caniuse-lite": "^1.0.30001579", "postcss": "8.4.31", "styled-jsx": "5.1.6" }, "optionalDependencies": { "@next/swc-darwin-arm64": "15.5.21", "@next/swc-darwin-x64": "15.5.21", "@next/swc-linux-arm64-gnu": "15.5.21", "@next/swc-linux-arm64-musl": "15.5.21", "@next/swc-linux-x64-gnu": "15.5.21", "@next/swc-linux-x64-musl": "15.5.21", "@next/swc-win32-arm64-msvc": "15.5.21", "@next/swc-win32-x64-msvc": "15.5.21", "sharp": "^0.34.3" }, "peerDependencies": { "@opentelemetry/api": "^1.1.0", "@playwright/test": "^1.51.1", "babel-plugin-react-compiler": "*", "react": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0", "react-dom": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0", "sass": "^1.3.0" }, "optionalPeers": ["@playwright/test", "babel-plugin-react-compiler", "sass"], "bin": "dist/bin/next" }, ""],
 
     "node-domexception": ["node-domexception@1.0.0", "", {}, ""],
 
@@ -2493,8 +2508,6 @@
 
     "@modelcontextprotocol/sdk/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, ""],
 
-    "@modelcontextprotocol/sdk/jose": ["jose@6.2.4", "", {}, ""],
-
     "@next/eslint-plugin-next/fast-glob": ["fast-glob@3.3.1", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, ""],
 
     "@node-minify/core/glob": ["glob@9.3.5", "", { "dependencies": { "fs.realpath": "^1.0.0", "minimatch": "^8.0.2", "minipass": "^4.2.4", "path-scurry": "^1.6.1" } }, "sha512-e1LleDykUz2Iu+MTYdkSsuWX8lvAjAcs0Xef0lNIu0S2wOAzuTxCJtcd9S3cijlwYF18EsU3rzb8jPVobxDh9Q=="],
@@ -2688,8 +2701,6 @@
     "google-gax/uuid": ["uuid@9.0.1", "", { "bin": "dist/bin/uuid" }, ""],
 
     "googleapis-common/uuid": ["uuid@9.0.1", "", { "bin": "dist/bin/uuid" }, ""],
-
-    "jwks-rsa/jose": ["jose@4.15.9", "", {}, ""],
 
     "lru-memoizer/lru-cache": ["lru-cache@6.0.0", "", { "dependencies": { "yallist": "^4.0.0" } }, ""],
 
@@ -3005,6 +3016,10 @@
 
     "@genkit-ai/core/express/debug/ms": ["ms@2.0.0", "", {}, ""],
 
+    "@genkit-ai/core/express/finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
+
+    "@genkit-ai/core/express/send/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
+
     "@genkit-ai/core/express/send/mime": ["mime@1.6.0", "", { "bin": "cli.js" }, ""],
 
     "@genkit-ai/core/express/type-is/media-typer": ["media-typer@0.3.0", "", {}, ""],
@@ -3017,6 +3032,10 @@
 
     "@genkit-ai/telemetry-server/express/debug/ms": ["ms@2.0.0", "", {}, ""],
 
+    "@genkit-ai/telemetry-server/express/finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
+
+    "@genkit-ai/telemetry-server/express/send/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
+
     "@genkit-ai/telemetry-server/express/send/mime": ["mime@1.6.0", "", { "bin": "cli.js" }, ""],
 
     "@genkit-ai/telemetry-server/express/type-is/media-typer": ["media-typer@0.3.0", "", {}, ""],
@@ -3028,6 +3047,10 @@
     "@genkit-ai/tools-common/express/accepts/negotiator": ["negotiator@0.6.3", "", {}, ""],
 
     "@genkit-ai/tools-common/express/debug/ms": ["ms@2.0.0", "", {}, ""],
+
+    "@genkit-ai/tools-common/express/finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
+
+    "@genkit-ai/tools-common/express/send/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
 
     "@genkit-ai/tools-common/express/send/mime": ["mime@1.6.0", "", { "bin": "cli.js" }, ""],
 
@@ -3109,13 +3132,25 @@
 
     "@genkit-ai/core/express/accepts/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
+    "@genkit-ai/core/express/finalhandler/debug/ms": ["ms@2.0.0", "", {}, ""],
+
+    "@genkit-ai/core/express/send/debug/ms": ["ms@2.0.0", "", {}, ""],
+
     "@genkit-ai/core/express/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
     "@genkit-ai/telemetry-server/express/accepts/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
+    "@genkit-ai/telemetry-server/express/finalhandler/debug/ms": ["ms@2.0.0", "", {}, ""],
+
+    "@genkit-ai/telemetry-server/express/send/debug/ms": ["ms@2.0.0", "", {}, ""],
+
     "@genkit-ai/telemetry-server/express/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
     "@genkit-ai/tools-common/express/accepts/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
+
+    "@genkit-ai/tools-common/express/finalhandler/debug/ms": ["ms@2.0.0", "", {}, ""],
+
+    "@genkit-ai/tools-common/express/send/debug/ms": ["ms@2.0.0", "", {}, ""],
 
     "@genkit-ai/tools-common/express/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
