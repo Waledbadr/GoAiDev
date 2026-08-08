@@ -38,11 +38,11 @@ function AppLayoutInner({ children }: PropsWithChildren) {
         <Sidebar side={locale === 'ar' ? 'right' : 'left'} className="no-print">
           <AppSidebar />
         </Sidebar>
-  <SidebarInset className="flex flex-col">
+        <SidebarInset className="flex flex-col min-w-0 w-full">
           <AppHeader className="no-print" />
-     <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-6 bg-background">
-             {children}
-           </main>
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6 bg-background min-w-0 w-full">
+            {children}
+          </main>
         </SidebarInset>
       </SidebarProvider>
     </RequireAuth>

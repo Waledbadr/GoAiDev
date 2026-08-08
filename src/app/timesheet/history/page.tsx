@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { db, auth, authReady } from '@/lib/firebase';
+import { handleFirestoreError, OperationType } from '@/lib/firebase-error';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -281,13 +283,28 @@ function TimesheetHistoryContent() {
 
     const fetchData = async () => {
       try {
+        await authReady;
+        if (!active) return;
+
         const dateStartStr = daysArray[0];
         const dateEndStr = daysArray[daysArray.length - 1];
 
         // Fetch remaining data from Firestore in parallel (without monthsPromise query!)
-        const employeesPromise = getDocs(collection(db as any, 'housingEmployees'));
-        const leavesPromise = getDocs(query(collection(db as any, 'timesheetLeaves'), orderBy('createdAt', 'desc'), limit(1000)));
-        const exceptionsPromise = getDocs(query(collection(db as any, 'timesheetExceptions'), orderBy('createdAt', 'desc'), limit(1000)));
+        const employeesPromise = getDocs(collection(db as any, 'housingEmployees'))
+          .catch(err => {
+            console.warn('housingEmployees fetch notice:', err);
+            return null;
+          });
+        const leavesPromise = getDocs(query(collection(db as any, 'timesheetLeaves'), limit(1000)))
+          .catch(err => {
+            console.warn('timesheetLeaves fetch notice:', err);
+            return null;
+          });
+        const exceptionsPromise = getDocs(query(collection(db as any, 'timesheetExceptions'), limit(1000)))
+          .catch(err => {
+            console.warn('timesheetExceptions fetch notice:', err);
+            return null;
+          });
         const recordsPromise = daysArray.length > 0
           ? getDocs(query(
               collection(db as any, 'attendanceRecords'),
@@ -295,7 +312,10 @@ function TimesheetHistoryContent() {
               where('date', '<=', dateEndStr),
               orderBy('date', 'desc'),
               limit(10000)
-            ))
+            )).catch(err => {
+              console.warn('attendanceRecords fetch notice:', err);
+              return null;
+            })
           : Promise.resolve(null);
 
         const [empsSnap, leavesSnap, exceptionsSnap, recordsSnap] = await Promise.all([
@@ -308,14 +328,16 @@ function TimesheetHistoryContent() {
         if (!active) return;
 
         const emps: Record<string, any> = {};
-        empsSnap.forEach(d => {
-          const data = d.data();
-          const key = getEmployeeKeyFromAny(data) || d.id;
-          emps[key] = { id: d.id, ...data };
-        });
+        if (empsSnap) {
+          empsSnap.forEach(d => {
+            const data = d.data();
+            const key = getEmployeeKeyFromAny(data) || d.id;
+            emps[key] = { id: d.id, ...data };
+          });
+        }
 
-        const fetchedLeaves = leavesSnap.docs.map(d => d.data());
-        const fetchedExceptions = exceptionsSnap.docs.map(d => d.data());
+        const fetchedLeaves = leavesSnap ? leavesSnap.docs.map(d => d.data()) : [];
+        const fetchedExceptions = exceptionsSnap ? exceptionsSnap.docs.map(d => d.data()) : [];
         const fetchedRecords = recordsSnap ? recordsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
 
         // Save to states
@@ -334,11 +356,24 @@ function TimesheetHistoryContent() {
       }
     };
 
-    fetchData();
-
-    return () => {
-      active = false;
-    };
+    if (auth) {
+      const unsub = onAuthStateChanged(auth, (u) => {
+        if (u) {
+          fetchData();
+        } else {
+          if (active) setLoading(false);
+        }
+      });
+      return () => {
+        active = false;
+        unsub();
+      };
+    } else {
+      fetchData();
+      return () => {
+        active = false;
+      };
+    }
   }, [daysArray, defaultMonth, filterMonth, loadResidences]);
 
   // Group data by Residence (projectName) -> Employee

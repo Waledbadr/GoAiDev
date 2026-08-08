@@ -5,6 +5,7 @@ const RENDER_GIT_COMMIT = process.env.RENDER_GIT_COMMIT;
 const BUILD_TIME_ISO = new Date().toISOString();
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['*.run.app', 'localhost:3000'],
   /* config options here */
   serverExternalPackages: [
     'firebase-admin',

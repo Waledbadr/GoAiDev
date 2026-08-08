@@ -239,15 +239,15 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
 
   const headerClass = cn(
     // Glassmorphism header
-    'sticky top-0 z-30 flex h-16 items-center gap-4 border-b px-4 sm:px-6',
+    'sticky top-0 z-30 flex h-16 items-center gap-2 sm:gap-4 border-b px-2 sm:px-6 w-full min-w-0 max-w-full overflow-hidden',
     'bg-white/60 dark:bg-white/10 backdrop-blur-xl border-white/30 dark:border-white/10',
     className,
   );
 
   return (
     <header className={headerClass} {...props}>
-      <SidebarTrigger className="h-10 w-10 md:hidden" />
-      <div className="ml-3 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <SidebarTrigger className="h-10 w-10 shrink-0" />
+      <div className="ms-1 sm:ms-3 flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar shrink min-w-0 max-w-[140px] xs:max-w-[200px] sm:max-w-none">
         <TooltipProvider>
           {/* Materials App */}
           <Tooltip>
@@ -358,7 +358,7 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
       <div className="flex-1" />
 
       {/* Quick Actions */}
-      <div className="flex items-center gap-1 mr-2">
+      <div className="hidden sm:flex items-center gap-1 rtl:ml-2 ltr:mr-2">
         <TooltipProvider>
           {appQuickActions.map((action, idx) => {
             const ActionIcon = action.Icon;
@@ -436,7 +436,7 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
                 <span className="sr-only">Notifications</span>
             </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-96">
+        <DropdownMenuContent align="end" className="w-[calc(100vw-2rem)] sm:w-96 max-w-sm">
             <DropdownMenuLabel className="flex justify-between items-center">
                 <span className="font-semibold">{dict.notifications}</span>
                 {isMounted && unreadCount > 0 && <Button variant="link" size="sm" className="h-auto p-0" onClick={markAllAsRead}>{dict.viewAll}</Button>}

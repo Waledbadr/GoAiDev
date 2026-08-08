@@ -227,91 +227,94 @@ export default function LoginForm() {
     }
   };
 
-  const signInWithFallbackUser = async (userEmail: string, displayName: string) => {
-    if (!auth) return;
-    const pwd = "DemoUser#2026!Pass";
-    try {
-      const cred = await signInWithEmailAndPassword(auth, userEmail, pwd);
-      await ensureUserProfile(cred.user.uid, { name: displayName, email: userEmail });
-    } catch (e: any) {
-      if (e?.code === 'auth/user-not-found' || e?.code === 'auth/invalid-credential') {
-        try {
-          const cred = await createUserWithEmailAndPassword(auth, userEmail, pwd);
-          if (cred.user) {
-            try { await updateProfile(cred.user, { displayName }); } catch {}
-            await ensureUserProfile(cred.user.uid, { name: displayName, email: userEmail });
-          }
-        } catch (createErr) {
-          console.error("Fallback user creation error:", createErr);
-        }
-      }
-    }
-    redirectAfterLogin();
-  };
-
   const oauthHandler = async (provider: "google" | "microsoft") => {
     if (!auth) {
-      setError("Authentication is not configured.");
+      const msg = "Authentication is not configured.";
+      setError(msg);
+      toast({ title: "Error", description: msg, variant: "destructive" });
       return;
     }
     setLoading(true);
     setError(null);
     setInfo(null);
 
-    // Use typed email & name if available in the form fields
-    const typedEmail = toASCII(email).trim();
-    const typedName = name.trim();
-
-    let targetEmail = typedEmail;
-    if (!targetEmail) {
-      targetEmail = provider === 'google' ? 'google.user@estatecare.app' : 'microsoft.user@estatecare.app';
-    }
-
-    let targetName = typedName;
-    if (!targetName) {
-      if (typedEmail) {
-        const raw = typedEmail.split('@')[0];
-        targetName = raw.charAt(0).toUpperCase() + raw.slice(1);
-      } else {
-        targetName = provider === 'google' ? 'Google User' : 'Microsoft User';
-      }
+    // Configure Provider with explicit scopes
+    let prov: GoogleAuthProvider | OAuthProvider;
+    if (provider === "google") {
+      const gProv = new GoogleAuthProvider();
+      gProv.addScope("email");
+      gProv.addScope("profile");
+      gProv.setCustomParameters({ prompt: "select_account" });
+      prov = gProv;
+    } else {
+      const msProv = new OAuthProvider("microsoft.com");
+      msProv.addScope("email");
+      msProv.addScope("profile");
+      msProv.addScope("User.Read");
+      msProv.setCustomParameters({ prompt: "select_account", tenant: "common" });
+      prov = msProv;
     }
 
     try {
-      const prov = provider === "google" ? new GoogleAuthProvider() : new OAuthProvider("microsoft.com");
-      try {
-        const res = await signInWithPopup(auth, prov);
-        const resolvedName = res.user.displayName || targetName;
-        const resolvedEmail = res.user.email || targetEmail;
+      const res = await signInWithPopup(auth, prov);
+      if (res && res.user) {
+        const resolvedName = res.user.displayName || (provider === 'google' ? 'Google User' : 'Microsoft User');
+        const resolvedEmail = res.user.email || '';
         await ensureUserProfile(res.user.uid, { name: resolvedName, email: resolvedEmail });
         toast({
           title: `Welcome ${resolvedName}`,
-          description: `Signed in with ${resolvedEmail}`,
+          description: `Signed in with ${resolvedEmail || provider}`,
         });
         redirectAfterLogin();
         return;
-      } catch (popupErr: any) {
-        const c = popupErr?.code || '';
-        const msg = popupErr?.message || '';
-        // Try redirect if popup blocked
-        if (c === 'auth/popup-blocked' || c === 'auth/popup-closed-by-user' || /blocked|cookies|third.?party/i.test(msg)) {
-          try {
-            await signInWithRedirect(auth, prov);
-            return;
-          } catch {}
-        }
-        toast({
-          title: `${provider === 'google' ? 'Google' : 'Microsoft'} Sign In`,
-          description: `Logged in as: ${targetName} (${targetEmail})`,
-        });
-        await signInWithFallbackUser(targetEmail, targetName);
       }
-    } catch (err: any) {
+    } catch (popupErr: any) {
+      const code = popupErr?.code || '';
+      const message = popupErr?.message || '';
+      console.warn(`OAuth (${provider}) popup error:`, code, message);
+
+      // Try redirect if popup is blocked
+      if (code === 'auth/popup-blocked') {
+        try {
+          toast({
+            title: "Redirecting...",
+            description: "Opening sign-in window...",
+          });
+          await signInWithRedirect(auth, prov);
+          return;
+        } catch (redirectErr: any) {
+          console.error("OAuth redirect error:", redirectErr);
+        }
+      }
+
+      // Handle user closing popup window gracefully
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        toast({
+          title: "Sign-in cancelled",
+          description: "Sign-in window was closed.",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Explicit error notifications for Firebase configuration issues
+      let friendlyError = "Sign-in failed. Please try again.";
+      if (code === 'auth/unauthorized-domain') {
+        friendlyError = "Domain not authorized in Firebase Console. Please add this domain to Authorized Domains in Firebase Auth settings.";
+      } else if (code === 'auth/operation-not-allowed') {
+        friendlyError = `${provider === 'google' ? 'Google' : 'Microsoft'} sign-in provider is not enabled in Firebase Auth Console.`;
+      } else if (code === 'auth/account-exists-with-different-credential') {
+        friendlyError = "An account already exists with the same email using a different sign-in method.";
+      } else if (message) {
+        friendlyError = message;
+      }
+
+      setError(friendlyError);
       toast({
-        title: `${provider === 'google' ? 'Google' : 'Microsoft'} Sign In`,
-        description: `Logged in as: ${targetName} (${targetEmail})`,
+        title: `${provider === 'google' ? 'Google' : 'Microsoft'} Sign-In Error`,
+        description: friendlyError,
+        variant: "destructive",
       });
-      await signInWithFallbackUser(targetEmail, targetName);
     } finally {
       setLoading(false);
     }
@@ -348,7 +351,11 @@ export default function LoginForm() {
 
   const handleMagicLink = async () => {
     if (!auth) return setError("Authentication is not configured.");
-    const targetEmail = toASCII(email).trim() || 'magiclink.user@estatecare.app';
+    const targetEmail = toASCII(email).trim();
+    if (!targetEmail) {
+      setError("Please enter your email first to receive a magic link.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setInfo(null);
@@ -362,8 +369,9 @@ export default function LoginForm() {
       setInfo('Magic link sent to your email.');
       toast({ title: 'Email sent', description: `Magic link sent to ${targetEmail}` });
     } catch (e: any) {
-      toast({ title: 'Magic Link Sign In', description: `Signed in as ${targetEmail}` });
-      await signInWithFallbackUser(targetEmail, 'Magic Link User');
+      const msg = e?.message || "Failed to send magic link.";
+      setError(msg);
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -601,10 +609,10 @@ export default function LoginForm() {
             </div>
 
             <div className="grid gap-2">
-              <Button variant="outline" onClick={() => oauthHandler("google")} disabled={loading}>
+              <Button type="button" variant="outline" onClick={() => oauthHandler("google")} disabled={loading}>
                 <img alt="" src="https://www.google.com/favicon.ico" className="h-4 w-4 mr-2" /> Continue with Google
               </Button>
-              <Button variant="outline" onClick={() => oauthHandler("microsoft")} disabled={loading}>
+              <Button type="button" variant="outline" onClick={() => oauthHandler("microsoft")} disabled={loading}>
                 <img alt="" src="https://learn.microsoft.com/favicon.ico" className="h-4 w-4 mr-2" /> Continue with Microsoft
               </Button>
               <div className="grid grid-cols-2 gap-2">

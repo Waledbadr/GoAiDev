@@ -95,8 +95,15 @@ body {
   * {
     @apply border-border;
   }
-  body {
+  html, body {
     @apply bg-background text-foreground;
+    max-width: 100%;
+    overflow-x: clip;
+    -webkit-tap-highlight-color: transparent;
+  }
+  img, svg, video, canvas, iframe {
+    max-width: 100%;
+    height: auto;
   }
 }
 

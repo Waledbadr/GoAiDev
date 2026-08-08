@@ -2,6 +2,7 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { 
   initializeFirestore,
+  getFirestore,
   type Firestore,
   connectFirestoreEmulator,
   setLogLevel,
@@ -83,13 +84,16 @@ if (isFirebaseConfigured) {
         experimentalForceLongPolling: useMemoryCache, // avoid primary lease contention in dev
         experimentalAutoDetectLongPolling: !useMemoryCache,
       } as any);
-    } catch (e) {
-      // Fallback (e.g., Safari Private Mode)
-      db = initializeFirestore(app, {
-        localCache: memoryLocalCache(),
-        ignoreUndefinedProperties: true,
-        experimentalForceLongPolling: true,
-      } as any);
+    } catch {
+      try {
+        db = initializeFirestore(app, {
+          localCache: memoryLocalCache(),
+          ignoreUndefinedProperties: true,
+          experimentalForceLongPolling: true,
+        } as any);
+      } catch {
+        db = getFirestore(app);
+      }
     }
 
     // If an emulator host is provided via env, connect the client to it so

@@ -21,7 +21,8 @@
     "validate:workers": "node scripts/validate-workers-json.mjs",
     "keep-alive": "node scripts/keep-alive.mjs",
     "lookup:uid": "node --env-file=.env.local scripts/lookup-uid.mjs",
-    "update:room-areas": "node --env-file=.env.local scripts/update-rooms-default-area.mjs"
+    "update:room-areas": "node --env-file=.env.local scripts/update-rooms-default-area.mjs",
+    "export:d1": "node scripts/export-firestore-to-d1.mjs"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
