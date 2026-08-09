@@ -44,7 +44,7 @@
         "html2canvas": "^1.4.1",
         "jose": "^6.2.6",
         "lucide-react": "^0.475.0",
-        "next": "^15.5.9",
+        "next": "15.5.21",
         "patch-package": "^8.0.0",
         "react": "^19.2.3",
         "react-day-picker": "^9.12.0",
@@ -3016,10 +3016,6 @@
 
     "@genkit-ai/core/express/debug/ms": ["ms@2.0.0", "", {}, ""],
 
-    "@genkit-ai/core/express/finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
-
-    "@genkit-ai/core/express/send/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
-
     "@genkit-ai/core/express/send/mime": ["mime@1.6.0", "", { "bin": "cli.js" }, ""],
 
     "@genkit-ai/core/express/type-is/media-typer": ["media-typer@0.3.0", "", {}, ""],
@@ -3032,10 +3028,6 @@
 
     "@genkit-ai/telemetry-server/express/debug/ms": ["ms@2.0.0", "", {}, ""],
 
-    "@genkit-ai/telemetry-server/express/finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
-
-    "@genkit-ai/telemetry-server/express/send/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
-
     "@genkit-ai/telemetry-server/express/send/mime": ["mime@1.6.0", "", { "bin": "cli.js" }, ""],
 
     "@genkit-ai/telemetry-server/express/type-is/media-typer": ["media-typer@0.3.0", "", {}, ""],
@@ -3047,10 +3039,6 @@
     "@genkit-ai/tools-common/express/accepts/negotiator": ["negotiator@0.6.3", "", {}, ""],
 
     "@genkit-ai/tools-common/express/debug/ms": ["ms@2.0.0", "", {}, ""],
-
-    "@genkit-ai/tools-common/express/finalhandler/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
-
-    "@genkit-ai/tools-common/express/send/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, ""],
 
     "@genkit-ai/tools-common/express/send/mime": ["mime@1.6.0", "", { "bin": "cli.js" }, ""],
 
@@ -3132,25 +3120,13 @@
 
     "@genkit-ai/core/express/accepts/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
-    "@genkit-ai/core/express/finalhandler/debug/ms": ["ms@2.0.0", "", {}, ""],
-
-    "@genkit-ai/core/express/send/debug/ms": ["ms@2.0.0", "", {}, ""],
-
     "@genkit-ai/core/express/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
     "@genkit-ai/telemetry-server/express/accepts/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
-    "@genkit-ai/telemetry-server/express/finalhandler/debug/ms": ["ms@2.0.0", "", {}, ""],
-
-    "@genkit-ai/telemetry-server/express/send/debug/ms": ["ms@2.0.0", "", {}, ""],
-
     "@genkit-ai/telemetry-server/express/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 
     "@genkit-ai/tools-common/express/accepts/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
-
-    "@genkit-ai/tools-common/express/finalhandler/debug/ms": ["ms@2.0.0", "", {}, ""],
-
-    "@genkit-ai/tools-common/express/send/debug/ms": ["ms@2.0.0", "", {}, ""],
 
     "@genkit-ai/tools-common/express/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, ""],
 

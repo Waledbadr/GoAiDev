@@ -8,6 +8,7 @@ import { HousingEmployeesProvider, useHousingEmployees, HousingEmployee } from '
 import { TimesheetProvider, useTimesheet } from '@/context/timesheet-context';
 import { useLanguage } from '@/context/language-context';
 import { useUsers, User } from '@/context/users-context';
+import { useResidences } from '@/context/residences-context';
 import { getFiscalMonthPeriod, getFiscalMonthForDate } from '@/lib/fiscal-month-utils';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -120,48 +121,115 @@ const EMPLOYEE_MASTER: Record<string, { nameAr: string; name: string; profession
   '14192': { nameAr: 'شكور محمد', name: 'Shakur Mohammed', professionAr: 'تسكين عمالة', profession: 'Housing Coordinator' },
 };
 
-// Helper to determine if an employee is assigned to / belongs to a given user
-function isEmployeeAssignedToUser(emp: any, user: User | null): boolean {
+// Helper to determine if an employee belongs to the residences (assignedResidences) of a user or a selected residence filter
+function isEmployeeInUserResidences(
+  emp: any,
+  user: User | null,
+  allResidences: any[],
+  selectedResFilter: string = 'ALL',
+  projectToResidenceMap: Record<string, string> = {}
+): boolean {
   if (!user) return true;
-  if (user.role === 'Admin') return true;
 
-  const userEmpId = String(user.employeeId || '').trim();
-  const userId = String(user.id || '').trim();
-  const userEmail = String(user.email || '').trim().toLowerCase();
-  const userName = String(user.name || '').trim().toLowerCase();
-  const userCompany = String(user.company || '').trim().toLowerCase();
-  const userIdNum = String(user.idNumber || '').trim();
+  let targetResKeys: string[] = [];
 
-  const empId = String(emp.employeeId || emp.badgeId || emp.id || '').trim();
-  const empIdNum = String(emp.idNumber || '').trim();
-  const empCreatedBy = String(emp.createdBy || '').trim().toLowerCase();
-  const empSupervisorId = String(emp.supervisorId || '').trim();
-  const empSupervisor = String(emp.supervisor || '').trim().toLowerCase();
-  const empManagerId = String(emp.managerId || '').trim();
-  const empAssignedUser = String(emp.assignedUser || emp.userId || '').trim();
-  const empCompany = String(emp.company || '').trim().toLowerCase();
-  const empName = String(emp.name || '').trim().toLowerCase();
-  const empNameAr = String(emp.nameAr || '').trim();
+  if (selectedResFilter && selectedResFilter !== 'ALL') {
+    if (user.role !== 'Admin') {
+      const userAssigned = user.assignedResidences || [];
+      if (
+        !userAssigned.includes('ALL') &&
+        !userAssigned.includes('*') &&
+        !userAssigned.includes(selectedResFilter)
+      ) {
+        return false;
+      }
+    }
+    targetResKeys = [selectedResFilter];
+  } else if (user.role === 'Admin') {
+    return true; // Admin with ALL filter selected sees all employees
+  } else {
+    targetResKeys = user.assignedResidences || [];
+  }
 
-  // 1. Direct Self Match
-  if (userEmpId && (empId === userEmpId || empId.endsWith(userEmpId))) return true;
-  if (userIdNum && empIdNum && empIdNum === userIdNum) return true;
-  if (userId && (empId === userId || empAssignedUser === userId)) return true;
-  if (userEmail && empCreatedBy === userEmail) return true;
-  if (userName && (empName === userName || empNameAr === userName)) return true;
+  if (targetResKeys.length === 0) {
+    return false;
+  }
 
-  // 2. Creator / Supervisor / Manager match
-  if (userId && (empCreatedBy === userId || empSupervisorId === userId || empManagerId === userId || empAssignedUser === userId)) return true;
-  if (userEmpId && empSupervisorId === userEmpId) return true;
-  if (userName && empSupervisor === userName) return true;
+  if (targetResKeys.includes('ALL') || targetResKeys.includes('*')) {
+    return true;
+  }
 
-  // 3. Company match
-  if (userCompany && empCompany && empCompany === userCompany) return true;
+  // Build match Set from targetResKeys and allResidences
+  const allowedIdSet = new Set<string>();
+  const allowedNameSet = new Set<string>();
 
-  // 4. Assigned Residence match
-  if (user.assignedResidences && user.assignedResidences.length > 0) {
-    const empResId = String(emp.residenceId || emp.residenceLocation || emp.projectName || emp.department || '').trim();
-    if (empResId && user.assignedResidences.includes(empResId)) return true;
+  targetResKeys.forEach((key) => {
+    if (!key) return;
+    const norm = String(key).trim().toLowerCase();
+    allowedIdSet.add(norm);
+
+    const foundRes = allResidences.find(
+      (r) =>
+        String(r.id || '').trim().toLowerCase() === norm ||
+        String(r.name || '').trim().toLowerCase() === norm ||
+        String(r.nameAr || '').trim().toLowerCase() === norm ||
+        String(r.nameEn || '').trim().toLowerCase() === norm
+    );
+
+    if (foundRes) {
+      if (foundRes.id) allowedIdSet.add(String(foundRes.id).trim().toLowerCase());
+      if (foundRes.name) allowedNameSet.add(String(foundRes.name).trim().toLowerCase());
+      if (foundRes.nameAr) allowedNameSet.add(String(foundRes.nameAr).trim().toLowerCase());
+      if (foundRes.nameEn) allowedNameSet.add(String(foundRes.nameEn).trim().toLowerCase());
+      if (foundRes.title) allowedNameSet.add(String(foundRes.title).trim().toLowerCase());
+    } else {
+      allowedNameSet.add(norm);
+    }
+  });
+
+  // Check employee's direct residenceId
+  const empResId = String(emp.residenceId || '').trim().toLowerCase();
+  if (empResId && allowedIdSet.has(empResId)) {
+    return true;
+  }
+
+  // Extract candidate project/residence properties (excluding general department or job role)
+  const candidates = [
+    emp.projectName,
+    emp.project,
+    emp.residenceName,
+    emp.residence,
+    emp.residenceLocation,
+    emp.building,
+    emp.location
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).trim());
+
+  if (candidates.length === 0) {
+    return false;
+  }
+
+  for (const cand of candidates) {
+    const candNorm = cand.toLowerCase();
+
+    // 1. Check mapped residence ID from projectToResidenceMap
+    const mappedResId = projectToResidenceMap[cand] || projectToResidenceMap[candNorm];
+    if (mappedResId && allowedIdSet.has(String(mappedResId).trim().toLowerCase())) {
+      return true;
+    }
+
+    // 2. Direct ID or Name match
+    if (allowedIdSet.has(candNorm) || allowedNameSet.has(candNorm)) {
+      return true;
+    }
+
+    // 3. Substring match for residence names
+    for (const name of allowedNameSet) {
+      if (name.length >= 3 && (candNorm.includes(name) || name.includes(candNorm))) {
+        return true;
+      }
+    }
   }
 
   return false;
@@ -174,8 +242,9 @@ function EmployeeReportInner() {
   const isAr = locale === 'ar';
 
   const { currentUser, users } = useUsers();
+  const { residences } = useResidences();
   const { employees, loading: empLoading } = useHousingEmployees();
-  const { timesheetEvents, employeeSchedules } = useTimesheet();
+  const { timesheetEvents, employeeSchedules, projectToResidenceMap } = useTimesheet();
 
   // Selected Employee & Filter State
   const initialBadge = searchParams.get('badgeId') || searchParams.get('employeeId') || '';
@@ -185,6 +254,7 @@ function EmployeeReportInner() {
   const [filterMonth, setFilterMonth] = useState<string>(initialMonth);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('matrix');
+  const [selectedResidenceFilter, setSelectedResidenceFilter] = useState<string>('ALL');
   const [adminSelectedUserId, setAdminSelectedUserId] = useState<string>('ALL');
 
   // Fetched Data for Employee
@@ -260,20 +330,94 @@ function EmployeeReportInner() {
     return map;
   }, [employees]);
 
-  // Allowed employees filtered by user access scope
+  // User Allowed Residences for Dropdown & Scope
+  const userAllowedResidences = useMemo(() => {
+    let effectiveUser = currentUser;
+    if (currentUser?.role === 'Admin' && adminSelectedUserId && adminSelectedUserId !== 'ALL') {
+      const found = users.find((u) => u.id === adminSelectedUserId);
+      if (found) effectiveUser = found;
+    }
+
+    if (!effectiveUser) return [];
+
+    if (effectiveUser.role === 'Admin') {
+      return residences;
+    }
+
+    const assignedIds = effectiveUser.assignedResidences || [];
+    if (assignedIds.includes('ALL') || assignedIds.includes('*')) {
+      return residences;
+    }
+
+    return residences.filter((r) => assignedIds.includes(r.id));
+  }, [currentUser, adminSelectedUserId, users, residences]);
+
+  // User Assigned Residence Names for UI Banner
+  const userAssignedResNames = useMemo(() => {
+    if (!currentUser) return [];
+
+    let targetUser = currentUser;
+    if (currentUser.role === 'Admin' && adminSelectedUserId && adminSelectedUserId !== 'ALL') {
+      const found = users.find((u) => u.id === adminSelectedUserId);
+      if (found) targetUser = found;
+    }
+
+    if (targetUser.role === 'Admin') return [isAr ? 'جميع السكنات' : 'All Residences'];
+
+    const resIds = targetUser.assignedResidences || [];
+    if (resIds.length === 0) return [];
+    if (resIds.includes('ALL') || resIds.includes('*')) {
+      return [isAr ? 'جميع السكنات' : 'All Residences'];
+    }
+    return resIds.map((idOrName) => {
+      const found = residences.find(
+        (r) =>
+          r.id === idOrName ||
+          r.name === idOrName ||
+          r.nameAr === idOrName ||
+          r.nameEn === idOrName
+      );
+      return found ? (isAr ? found.nameAr || found.name : found.nameEn || found.name) : idOrName;
+    });
+  }, [currentUser, adminSelectedUserId, users, residences, isAr]);
+
+  // Allowed employees filtered strictly by assigned residences or residence filter
   const userAllowedEmployees = useMemo(() => {
     const list = Object.values(combinedEmployeesMap);
-    if (!currentUser || currentUser.role === 'Admin') {
-      if (adminSelectedUserId && adminSelectedUserId !== 'ALL') {
-        const targetUser = users.find((u) => u.id === adminSelectedUserId);
-        if (targetUser) {
-          return list.filter((emp) => isEmployeeAssignedToUser(emp, targetUser));
-        }
+
+    if (currentUser?.role === 'Admin' && adminSelectedUserId && adminSelectedUserId !== 'ALL') {
+      const targetUser = users.find((u) => u.id === adminSelectedUserId);
+      if (targetUser) {
+        return list.filter((emp) =>
+          isEmployeeInUserResidences(
+            emp,
+            targetUser,
+            residences,
+            selectedResidenceFilter,
+            projectToResidenceMap
+          )
+        );
       }
-      return list;
     }
-    return list.filter((emp) => isEmployeeAssignedToUser(emp, currentUser));
-  }, [combinedEmployeesMap, currentUser, adminSelectedUserId, users]);
+
+    return list.filter((emp) =>
+      isEmployeeInUserResidences(
+        emp,
+        currentUser,
+        residences,
+        selectedResidenceFilter,
+        projectToResidenceMap
+      )
+    );
+  }, [
+    combinedEmployeesMap,
+    currentUser,
+    residences,
+    selectedResidenceFilter,
+    adminSelectedUserId,
+    users,
+    projectToResidenceMap
+  ]);
 
   // List of filtered employee options for combobox/search
   const employeeOptions = useMemo(() => {
@@ -655,59 +799,80 @@ function EmployeeReportInner() {
       </div>
 
       {/* User Scope & Access Indicator Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-50/80 dark:bg-blue-950/40 p-3 rounded-lg border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 print:hidden">
-        <div className="flex items-center gap-2">
-          {currentUser?.role === 'Admin' ? (
-            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-          ) : (
-            <Lock className="h-4 w-4 text-blue-600 shrink-0" />
-          )}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-blue-50/80 dark:bg-blue-950/40 p-3 rounded-lg border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 print:hidden">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Building className="h-4 w-4 text-blue-600 shrink-0" />
           <span className="font-medium">
             {currentUser?.role === 'Admin' ? (
               isAr
-                ? `صلاحيات مسؤول النظام (${currentUser?.name || 'Admin'}): يتم عرض كافة العمالة بالكامل (${userAllowedEmployees.length} موظف)`
-                : `System Admin Permissions (${currentUser?.name || 'Admin'}): Viewing all employees (${userAllowedEmployees.length} total)`
+                ? `صلاحيات مسؤول النظام (${currentUser?.name || 'Admin'}): يتم عرض عمالة كافة السكنات (${userAllowedEmployees.length} موظف)`
+                : `System Admin Permissions (${currentUser?.name || 'Admin'}): Viewing workers across all residences (${userAllowedEmployees.length} total)`
             ) : (
               isAr
-                ? `عرض نطاق العمالة الخاصة بك (${currentUser?.name || 'المستخدم الحالي'}): يظهر فقط العمالة المسندة لحسابك (${userAllowedEmployees.length} موظف)`
-                : `Your Assigned Employees Scope (${currentUser?.name || 'Current User'}): Showing only workers linked to your account (${userAllowedEmployees.length} total)`
+                ? `السكنات المسندة إليك [ ${userAssignedResNames.join('، ') || 'غير مسند'} ]: يتم عرض عمالة هذه السكنات فقط (${userAllowedEmployees.length} موظف)`
+                : `Your Assigned Residences [ ${userAssignedResNames.join(', ') || 'None'} ]: Showing employees of assigned residences only (${userAllowedEmployees.length} total)`
             )}
           </span>
         </div>
 
-        {/* Admin option to filter scope by user */}
-        {currentUser?.role === 'Admin' && users && users.length > 0 && (
-          <div className="flex items-center gap-2">
+        {/* Filters: Residence & User */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Residence Filter Dropdown */}
+          <div className="flex items-center gap-1.5">
             <span className="hidden sm:inline font-medium text-muted-foreground">
-              {isAr ? 'تصفية حسب نطاق المستخدم:' : 'Filter Scope by User:'}
+              {isAr ? 'السكن:' : 'Residence:'}
             </span>
-            <Select value={adminSelectedUserId} onValueChange={setAdminSelectedUserId}>
-              <SelectTrigger className="h-8 text-xs w-[180px] bg-white dark:bg-gray-900">
-                <SelectValue placeholder={isAr ? 'جميع العمالة' : 'All Employees'} />
+            <Select value={selectedResidenceFilter} onValueChange={setSelectedResidenceFilter}>
+              <SelectTrigger className="h-8 text-xs w-[170px] bg-white dark:bg-gray-900">
+                <SelectValue placeholder={isAr ? 'جميع السكنات' : 'All Residences'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">{isAr ? 'جميع العمالة (كافة المستخدمين)' : 'All Employees'}</SelectItem>
-                {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name} ({u.role})
+                <SelectItem value="ALL">
+                  {isAr ? 'جميع السكنات المسندة' : 'All Assigned Residences'}
+                </SelectItem>
+                {userAllowedResidences.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {isAr ? r.nameAr || r.name : r.nameEn || r.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        )}
+
+          {/* Admin option to filter scope by user */}
+          {currentUser?.role === 'Admin' && users && users.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="hidden sm:inline font-medium text-muted-foreground">
+                {isAr ? 'المستخدم:' : 'User:'}
+              </span>
+              <Select value={adminSelectedUserId} onValueChange={setAdminSelectedUserId}>
+                <SelectTrigger className="h-8 text-xs w-[170px] bg-white dark:bg-gray-900">
+                  <SelectValue placeholder={isAr ? 'جميع العمالة' : 'All Employees'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{isAr ? 'جميع المستخدمين (كافة السكنات)' : 'All Users'}</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
       </div>
 
       {userAllowedEmployees.length === 0 && (
         <Card className="border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-6 text-center print:hidden">
-          <AlertTriangle className="h-8 w-8 text-amber-600 mx-auto mb-2" />
+          <Building className="h-8 w-8 text-amber-600 mx-auto mb-2" />
           <h3 className="text-base font-bold text-amber-800 dark:text-amber-200">
-            {isAr ? 'لا توجد عمالة مسجلة أو مسندة لمستخدمك' : 'No Workers Linked to Your Account'}
+            {isAr ? 'لا توجد عمالة تابعة للسكنات المسندة لحسابك' : 'No Workers Found in Assigned Residences'}
           </h3>
           <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 max-w-lg mx-auto">
             {isAr
-              ? 'حساب المستخدم الحالي غير مرتبط بأي عمالة في النظام. يرجى التواصل مع مدير النظام لإسناد عمالة لحسابك أومراجعة صلاحيات الوصول.'
-              : 'Your current user account is not linked to any worker records. Please contact system admin to assign workers to your profile.'}
+              ? 'حساب المستخدم الحالي مرتبط بسكنات لا تحتوي على عمالة مسجلة حالياً، أو لم يتم إسناد سكنات لحسابك بعد. يرجى التواصل مع مدير النظام لإسناد السكنات الخاضعة لإشرافك أو مراجعة بيانات العمالة في السكن.'
+              : 'Your account is linked to residences with no active workers, or no residences are assigned to your profile yet. Please contact the system administrator to update your assigned residences.'}
           </p>
         </Card>
       )}
