@@ -6,7 +6,8 @@ import { db } from '@/lib/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, UserCircle, Briefcase, Clock, FileText, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Search, UserCircle, Briefcase, Clock, FileText, RefreshCw, UserCheck } from 'lucide-react';
 import { useLanguage } from '@/context/language-context';
 import { useToast } from '@/hooks/use-toast';
 import { AddEmployeeDialog } from '@/components/timesheet/employees/add-employee-dialog';
@@ -280,9 +281,17 @@ function TimesheetEmployeesContent() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm" className="h-8 text-blue-600" onClick={() => setSelectedEmployee(emp)}>
-                        Profile & Leaves
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild className="h-8 text-blue-600 border-blue-200 hover:bg-blue-50">
+                          <Link href={`/timesheet/employee-report?badgeId=${emp.employeeId || emp.badgeId || emp.id}`}>
+                            <UserCheck className="w-3.5 h-3.5 mr-1" />
+                            تقرير الدوام
+                          </Link>
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-8 text-gray-600" onClick={() => setSelectedEmployee(emp)}>
+                          تعديل البيانات
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

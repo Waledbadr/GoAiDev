@@ -11,7 +11,7 @@ import {
   SidebarMenuSubItem,
   SidebarMenuSubButton,
 } from '@/components/ui/sidebar';
-import { Building, Home, Wrench, Settings, Users, ClipboardList, Move, ListOrdered, ClipboardMinus, AreaChart, History, PackageCheck, TrendingUp, TrendingDown, AlertTriangle, FileCheck, GitBranch, LifeBuoy, Truck, FileText, Clock, Wallet, Calendar, Check, RefreshCw } from 'lucide-react';
+import { Building, Home, Wrench, Settings, Users, ClipboardList, Move, ListOrdered, ClipboardMinus, AreaChart, History, PackageCheck, TrendingUp, TrendingDown, AlertTriangle, FileCheck, GitBranch, LifeBuoy, Truck, FileText, Clock, Wallet, Calendar, Check, RefreshCw, UserCheck } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -102,6 +102,16 @@ export function AppSidebar() {
                     <Users />
                     <span className="group-data-[collapsible=icon]:hidden">
                       {'Employees'}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === '/timesheet/employee-report'} tooltip="Employee Report">
+                  <Link href="/timesheet/employee-report" onClick={handleNavigate}>
+                    <UserCheck />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {'Employee Profile & Log'}
                     </span>
                   </Link>
                 </SidebarMenuButton>

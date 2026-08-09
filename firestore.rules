@@ -3,11 +3,13 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isSignedIn() { return request.auth != null; }
   // Roles based strictly on users/{auth.uid}
-  function isAdmin() { return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin'; }
-  function isSupervisor() { return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Supervisor'; }
+  function userDocExists() { return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+  function getUserRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+  function isAdmin() { return userDocExists() && getUserRole() == 'Admin'; }
+  function isSupervisor() { return userDocExists() && getUserRole() == 'Supervisor'; }
     function isOwner(userId) { return isSignedIn() && userId == request.auth.uid; }
     function isAdminUser(uid) {
-      return get(/databases/$(database)/documents/users/$(uid)).data.role == 'Admin';
+      return exists(/databases/$(database)/documents/users/$(uid)) && get(/databases/$(database)/documents/users/$(uid)).data.role == 'Admin';
     }
     // Utility: allow supervisors to edit only inventory metadata fields (not IDs or dangerous fields)
     function itemMetadataOnlyChange() {
@@ -351,6 +353,13 @@ service cloud.firestore {
       // Only Admin/Supervisor can create/update records
       allow create, update: if isAdmin() || isSupervisor();
       // Only Admin can delete records
+      allow delete: if isAdmin();
+    }
+
+    // Income & Expense Transactions
+    match /incomeExpenseTransactions/{txId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() || isSupervisor();
       allow delete: if isAdmin();
     }
 

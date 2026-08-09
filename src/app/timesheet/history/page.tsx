@@ -8,7 +8,8 @@ import { handleFirestoreError, OperationType } from '@/lib/firebase-error';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Download, MapPin, CalendarDays, User, Briefcase, ChevronLeft, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Download, MapPin, CalendarDays, User, Briefcase, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import * as XLSX from 'xlsx';
 import { useLanguage } from '@/context/language-context';
@@ -41,6 +42,7 @@ interface TimesheetCacheData {
   timestamp: number;
   records: any[];
   leaves: any[];
+  transfers?: any[];
   employeesMap: Record<string, any>;
 }
 
@@ -141,13 +143,14 @@ function readMonthlyCache(monthStr: string): TimesheetCacheData | null {
   }
 }
 
-function saveMonthlyCache(monthStr: string, records: any[], leaves: any[], employeesMap: Record<string, any>) {
+function saveMonthlyCache(monthStr: string, records: any[], leaves: any[], employeesMap: Record<string, any>, transfers: any[] = []) {
   if (typeof window === 'undefined') return;
   try {
     const cacheData: TimesheetCacheData = {
       timestamp: Date.now(),
       records,
       leaves,
+      transfers,
       employeesMap,
     };
     localStorage.setItem(`${CACHE_PREFIX}${monthStr}`, JSON.stringify(cacheData));
@@ -195,6 +198,7 @@ function TimesheetHistoryContent() {
   const [records, setRecords] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
   const [exceptions, setExceptions] = useState<any[]>([]);
+  const [transfers, setTransfers] = useState<any[]>([]);
   const [employeesMap, setEmployeesMap] = useState<Record<string, any>>({});
   const [availableMonths, setAvailableMonths] = useState<string[]>(() => {
     const today = new Date();
@@ -268,6 +272,7 @@ function TimesheetHistoryContent() {
     if (cached) {
       setRecords(cached.records);
       setLeaves(cached.leaves);
+      if (cached.transfers) setTransfers(cached.transfers);
       setEmployeesMap(cached.employeesMap);
       setLoading(false); // Load instantly!
     } else {
@@ -305,6 +310,11 @@ function TimesheetHistoryContent() {
             console.warn('timesheetExceptions fetch notice:', err);
             return null;
           });
+        const transfersPromise = getDocs(query(collection(db as any, 'timesheetTransfers'), limit(1000)))
+          .catch(err => {
+            console.warn('timesheetTransfers fetch notice:', err);
+            return null;
+          });
         const recordsPromise = daysArray.length > 0
           ? getDocs(query(
               collection(db as any, 'attendanceRecords'),
@@ -318,11 +328,12 @@ function TimesheetHistoryContent() {
             })
           : Promise.resolve(null);
 
-        const [empsSnap, leavesSnap, exceptionsSnap, recordsSnap] = await Promise.all([
+        const [empsSnap, leavesSnap, exceptionsSnap, recordsSnap, transfersSnap] = await Promise.all([
           employeesPromise,
           leavesPromise,
           exceptionsPromise,
           recordsPromise,
+          transfersPromise,
         ]);
 
         if (!active) return;
@@ -339,15 +350,17 @@ function TimesheetHistoryContent() {
         const fetchedLeaves = leavesSnap ? leavesSnap.docs.map(d => d.data()) : [];
         const fetchedExceptions = exceptionsSnap ? exceptionsSnap.docs.map(d => d.data()) : [];
         const fetchedRecords = recordsSnap ? recordsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
+        const fetchedTransfers = transfersSnap ? transfersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
 
         // Save to states
         setEmployeesMap(emps);
         setLeaves(fetchedLeaves);
         setExceptions(fetchedExceptions);
         setRecords(fetchedRecords);
+        setTransfers(fetchedTransfers);
 
         // Update local cache for SWR next time
-        saveMonthlyCache(filterMonth, fetchedRecords, fetchedLeaves, emps);
+        saveMonthlyCache(filterMonth, fetchedRecords, fetchedLeaves, emps, fetchedTransfers);
 
         setLoading(false);
       } catch (error) {
@@ -606,6 +619,49 @@ function TimesheetHistoryContent() {
       });
     });
 
+    // Populate Transferred employees for current month if they moved out during this month
+    transfers.forEach(t => {
+      const badge = getEmployeeKeyFromAny(t) || t.badgeId || t.employeeId;
+      if (!badge) return;
+
+      const tDate = String(t.date || t.transferDate || t.startDate || '');
+      if (!tDate || !tDate.includes('-')) return;
+
+      const tType = String(t.type || '').toLowerCase().trim();
+      const isMoveOut = tType === 'move out' || tType === 'move-out' || tType === 'final exit' || tType === 'exit' || tType === 'transfer' || tType === 'transferred' || tType.includes('خروج') || tType.includes('نقل') || tType.includes('تحويل');
+
+      if (!isMoveOut) return;
+
+      if (deferredSearchTerm) {
+        const searchLower = deferredSearchTerm.toLowerCase();
+        if (!(t.name?.toLowerCase().includes(searchLower) || t.nameAr?.toLowerCase().includes(searchLower) || badge.toLowerCase().includes(searchLower))) return;
+      }
+
+      // If the transfer date is within the current month period
+      if (daysArray.length > 0 && tDate >= daysArray[0] && tDate <= daysArray[daysArray.length - 1]) {
+        const primaryRes = empRawGroup[badge]?.primaryRes || employeesMap[badge]?.projectName || employeesMap[badge]?.project || 'Unassigned / Outside';
+
+        if (currentUser?.role !== 'Admin') {
+          const resId = projectToResidenceMap[primaryRes];
+          if (resId && !userResidences.includes(resId)) return;
+        }
+
+        if (!grouped[primaryRes]) grouped[primaryRes] = {};
+        if (!grouped[primaryRes][badge]) {
+          const currentUserData = employeesMap[badge] || {};
+          grouped[primaryRes][badge] = {
+            name: currentUserData.name || currentUserData.nameAr || t.name || t.nameAr || badge,
+            profession: currentUserData.professionAr || currentUserData.profession || '-',
+            department: currentUserData.department || '-',
+            daily: {},
+            totalRH: 0,
+            totalOT: 0,
+            absences: 0
+          };
+        }
+      }
+    });
+
     // Get today formatted as YYYY-MM-DD in local time to prevent processing future Fridays
     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
@@ -797,60 +853,56 @@ function TimesheetHistoryContent() {
             // (via timesheet-utils.ts processPunches → calculateAttendanceStats) and stored correctly.
         });
 
-        // 3. Transfer marker 'T': mark days after employee's transfer/out date
-        // Transfer data may be stored in different fields (status/transferDate or timesheetTransfers).
+        // 3. Transfer marker 'T': mark days on or after employee's transfer/out date
         const empRecord = employeesMap[empKey];
 
-        const getTransferDateFromTimesheetTransfers = (record: any): string | undefined => {
-          const transfers = record?.timesheetTransfers;
-          if (!Array.isArray(transfers)) return undefined;
+        // Find move-out / transfer records for this employee
+        const empTransfers = transfers.filter(t => {
+          const k = getEmployeeKeyFromAny(t);
+          const bId = String(t.badgeId || t.employeeId || '').trim();
+          const docId = empRecord?.id ? String(empRecord.id).trim() : '';
+          const empBId = empRecord?.employeeId ? String(empRecord.employeeId).trim() : '';
+          return k === empKey || bId === empKey || (docId && (t.employeeId === docId || t.badgeId === docId)) || (empBId && (t.employeeId === empBId || t.badgeId === empBId));
+        });
 
-          // We assume "Move Out" means leaving the accommodation.
-          // Pick the latest Move Out date (if multiple exist) to be safe.
-          const moveOutDates = transfers
-            .filter((t) => String(t?.type || '').toLowerCase().trim() === 'move out')
-            .map((t) => t?.date)
-            .filter((d) => typeof d === 'string' && d.includes('-')) as string[];
+        const moveOutTransfers = empTransfers.filter(t => {
+          const tType = String(t?.type || '').toLowerCase().trim();
+          return tType === 'move out' || tType === 'move-out' || tType === 'final exit' || tType === 'exit' || tType === 'transfer' || tType === 'transferred' || tType.includes('خروج') || tType.includes('نقل') || tType.includes('تحويل');
+        });
 
-          if (moveOutDates.length === 0) return undefined;
+        const moveOutDates = moveOutTransfers
+          .map(t => String(t.date || t.transferDate || t.startDate || ''))
+          .filter(d => d && d.includes('-'));
+
+        let moveOutDate: string | undefined = undefined;
+        if (moveOutDates.length > 0) {
           moveOutDates.sort((a, b) => b.localeCompare(a));
-          return moveOutDates[0];
-        };
+          moveOutDate = moveOutDates[0];
+        } else if (empRecord?.transferDate) {
+          moveOutDate = String(empRecord.transferDate);
+        } else if (empRecord?.moveOutDate) {
+          moveOutDate = String(empRecord.moveOutDate);
+        } else if (empRecord?.exitDate) {
+          moveOutDate = String(empRecord.exitDate);
+        } else if (empRecord?.status === 'Transferred' || empRecord?.residenceStatus === 'Outside') {
+          // Fallback if status is Transferred/Outside
+          moveOutDate = '1970-01-01';
+        }
 
-        const transferDate: string | undefined =
-          empRecord?.transferDate || getTransferDateFromTimesheetTransfers(empRecord);
-
-        if (transferDate) {
-          const [ty, tm] = transferDate.split('-').map(Number);
+        if (moveOutDate) {
+          empData.isTransferred = true;
+          empData.transferDate = moveOutDate;
 
           daysArray.forEach((dateStr) => {
-            const [dy, dm] = dateStr.split('-').map(Number);
-            const sameMonth = dy === ty && dm === tm; // only within the transfer month
-
-            if (sameMonth) {
-              // Days BEFORE transfer date in same month
-              if (dateStr < transferDate) {
-                if (!empData.daily[dateStr] || empData.daily[dateStr].status === 'Absent') {
-                  empData.daily[dateStr] = { status: 'Transferred', date: dateStr, isTransfer: true };
-                }
-              }
-
-              // Days AFTER (or equal) transfer date, if no punch -> mark T
-              if (dateStr >= transferDate) {
-                if (!empData.daily[dateStr] || empData.daily[dateStr].status === 'Absent') {
-                  empData.daily[dateStr] = { status: 'Transferred', date: dateStr, isTransfer: true };
-                }
-              }
-            } else if (dateStr > transferDate) {
-              // Future months after transfer: mark all days T
-              if (!empData.daily[dateStr] || empData.daily[dateStr].status === 'Absent') {
+            // Days ON or AFTER the transfer/move-out date
+            if (dateStr >= moveOutDate!) {
+              const existing = empData.daily[dateStr];
+              // If no punch or marked as Absent, mark as Transferred ('T')
+              if (!existing || existing.status === 'Absent' || (existing.status !== 'Leave' && existing.status !== 'Exception' && existing.status !== 'Present' && (!existing.punches || existing.punches.length === 0) && (existing.totalHours || 0) === 0 && (existing.regularHours || 0) === 0)) {
                 empData.daily[dateStr] = { status: 'Transferred', date: dateStr, isTransfer: true };
               }
             }
           });
-
-          empData.isTransferred = true;
-          empData.transferDate = transferDate;
         }
 
 
@@ -867,23 +919,27 @@ function TimesheetHistoryContent() {
       });
     });
 
-    // Remove employees with Transferred status who have NO punches at all in this month
-    // (they shouldn't appear in months where they have zero presence)
+    // Remove employees with Transferred status who transferred in a prior month
+    // and have NO actual work or leave punches in this month
     Object.keys(grouped).forEach(proj => {
       Object.keys(grouped[proj]).forEach(empId => {
         const emp = grouped[proj][empId];
         if (!emp.isTransferred) return;
-        const hasPunch = Object.values(emp.daily).some(
-          (r: any) => !r.isTransfer && r.status !== 'Absent' && (r.totalHours > 0 || r.regularHours > 0 || r.status === 'Present' || r.status === 'Weekend' || r.status === 'Holiday' || r.status === 'Leave')
-        );
-        if (!hasPunch) {
-          delete grouped[proj][empId];
+
+        // If transfer date is prior to the start of this month's period
+        if (emp.transferDate && daysArray.length > 0 && emp.transferDate < daysArray[0]) {
+          const hasPunch = Object.values(emp.daily).some(
+            (r: any) => !r.isTransfer && r.status !== 'Absent' && (r.totalHours > 0 || r.regularHours > 0 || r.status === 'Present' || r.status === 'Weekend' || r.status === 'Holiday' || r.status === 'Leave')
+          );
+          if (!hasPunch) {
+            delete grouped[proj][empId];
+          }
         }
       });
     });
 
     return grouped;
-  }, [records, leaves, filterMonth, deferredSearchTerm, currentUser, residences, employeesMap, projectToResidenceMap, daysArray, timesheetEvents, employeeSchedules]);
+  }, [records, leaves, exceptions, transfers, filterMonth, deferredSearchTerm, currentUser, residences, employeesMap, projectToResidenceMap, daysArray, timesheetEvents, employeeSchedules]);
 
   const handleExportMonthlySheet = () => {
     const rows: Array<(string | number)[]> = [];
@@ -1196,7 +1252,14 @@ function TimesheetHistoryContent() {
                         <div className="flex items-center gap-2">
                           <User className="h-5 w-5 text-gray-400 flex-shrink-0" />
                           <div className="truncate w-full min-w-[120px]">
-                            <div className="font-medium text-gray-900 dark:text-gray-100 text-xs md:text-sm truncate">{empData.name}</div>
+                            <Link
+                              href={`/timesheet/employee-report?badgeId=${getEmployeeKeyFromAny(employeesMap[empId]) || empId}&month=${filterMonth}`}
+                              className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-xs md:text-sm truncate flex items-center gap-1 group"
+                              title={isAr ? "عرض تقرير الموظف الشامل" : "View Comprehensive Employee Report"}
+                            >
+                              <span>{empData.name}</span>
+                              <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </Link>
                             <div className="text-[10px] text-gray-500">
                               {getEmployeeKeyFromAny(employeesMap[empId]) || empId}
                             </div>
