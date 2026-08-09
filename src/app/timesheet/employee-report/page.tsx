@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase';
 import { HousingEmployeesProvider, useHousingEmployees, HousingEmployee } from '@/context/housing-employees-context';
 import { TimesheetProvider, useTimesheet } from '@/context/timesheet-context';
 import { useLanguage } from '@/context/language-context';
+import { useUsers, User } from '@/context/users-context';
 import { getFiscalMonthPeriod, getFiscalMonthForDate } from '@/lib/fiscal-month-utils';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -43,7 +44,10 @@ import {
   Laptop,
   Check,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Lock,
+  Filter,
+  Users
 } from 'lucide-react';
 
 import * as XLSX from 'xlsx';
@@ -116,12 +120,60 @@ const EMPLOYEE_MASTER: Record<string, { nameAr: string; name: string; profession
   '14192': { nameAr: 'شكور محمد', name: 'Shakur Mohammed', professionAr: 'تسكين عمالة', profession: 'Housing Coordinator' },
 };
 
+// Helper to determine if an employee is assigned to / belongs to a given user
+function isEmployeeAssignedToUser(emp: any, user: User | null): boolean {
+  if (!user) return true;
+  if (user.role === 'Admin') return true;
+
+  const userEmpId = String(user.employeeId || '').trim();
+  const userId = String(user.id || '').trim();
+  const userEmail = String(user.email || '').trim().toLowerCase();
+  const userName = String(user.name || '').trim().toLowerCase();
+  const userCompany = String(user.company || '').trim().toLowerCase();
+  const userIdNum = String(user.idNumber || '').trim();
+
+  const empId = String(emp.employeeId || emp.badgeId || emp.id || '').trim();
+  const empIdNum = String(emp.idNumber || '').trim();
+  const empCreatedBy = String(emp.createdBy || '').trim().toLowerCase();
+  const empSupervisorId = String(emp.supervisorId || '').trim();
+  const empSupervisor = String(emp.supervisor || '').trim().toLowerCase();
+  const empManagerId = String(emp.managerId || '').trim();
+  const empAssignedUser = String(emp.assignedUser || emp.userId || '').trim();
+  const empCompany = String(emp.company || '').trim().toLowerCase();
+  const empName = String(emp.name || '').trim().toLowerCase();
+  const empNameAr = String(emp.nameAr || '').trim();
+
+  // 1. Direct Self Match
+  if (userEmpId && (empId === userEmpId || empId.endsWith(userEmpId))) return true;
+  if (userIdNum && empIdNum && empIdNum === userIdNum) return true;
+  if (userId && (empId === userId || empAssignedUser === userId)) return true;
+  if (userEmail && empCreatedBy === userEmail) return true;
+  if (userName && (empName === userName || empNameAr === userName)) return true;
+
+  // 2. Creator / Supervisor / Manager match
+  if (userId && (empCreatedBy === userId || empSupervisorId === userId || empManagerId === userId || empAssignedUser === userId)) return true;
+  if (userEmpId && empSupervisorId === userEmpId) return true;
+  if (userName && empSupervisor === userName) return true;
+
+  // 3. Company match
+  if (userCompany && empCompany && empCompany === userCompany) return true;
+
+  // 4. Assigned Residence match
+  if (user.assignedResidences && user.assignedResidences.length > 0) {
+    const empResId = String(emp.residenceId || emp.residenceLocation || emp.projectName || emp.department || '').trim();
+    if (empResId && user.assignedResidences.includes(empResId)) return true;
+  }
+
+  return false;
+}
+
 function EmployeeReportInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { locale } = useLanguage();
   const isAr = locale === 'ar';
 
+  const { currentUser, users } = useUsers();
   const { employees, loading: empLoading } = useHousingEmployees();
   const { timesheetEvents, employeeSchedules } = useTimesheet();
 
@@ -133,6 +185,7 @@ function EmployeeReportInner() {
   const [filterMonth, setFilterMonth] = useState<string>(initialMonth);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('matrix');
+  const [adminSelectedUserId, setAdminSelectedUserId] = useState<string>('ALL');
 
   // Fetched Data for Employee
   const [loading, setLoading] = useState<boolean>(false);
@@ -207,12 +260,26 @@ function EmployeeReportInner() {
     return map;
   }, [employees]);
 
+  // Allowed employees filtered by user access scope
+  const userAllowedEmployees = useMemo(() => {
+    const list = Object.values(combinedEmployeesMap);
+    if (!currentUser || currentUser.role === 'Admin') {
+      if (adminSelectedUserId && adminSelectedUserId !== 'ALL') {
+        const targetUser = users.find((u) => u.id === adminSelectedUserId);
+        if (targetUser) {
+          return list.filter((emp) => isEmployeeAssignedToUser(emp, targetUser));
+        }
+      }
+      return list;
+    }
+    return list.filter((emp) => isEmployeeAssignedToUser(emp, currentUser));
+  }, [combinedEmployeesMap, currentUser, adminSelectedUserId, users]);
+
   // List of filtered employee options for combobox/search
   const employeeOptions = useMemo(() => {
-    const list = Object.values(combinedEmployeesMap);
-    if (!searchTerm) return list;
+    if (!searchTerm) return userAllowedEmployees;
     const term = searchTerm.toLowerCase();
-    return list.filter(
+    return userAllowedEmployees.filter(
       (e: any) =>
         e.name?.toLowerCase().includes(term) ||
         e.nameAr?.includes(term) ||
@@ -220,15 +287,22 @@ function EmployeeReportInner() {
         e.profession?.toLowerCase().includes(term) ||
         e.professionAr?.includes(term)
     );
-  }, [combinedEmployeesMap, searchTerm]);
+  }, [userAllowedEmployees, searchTerm]);
 
-  // Auto-select first employee if none selected
+  // Auto-select first allowed employee if current selected is invalid or empty
   useEffect(() => {
-    if (!selectedBadge && Object.keys(combinedEmployeesMap).length > 0) {
-      const keys = Object.keys(combinedEmployeesMap);
-      setSelectedBadge(keys[0]);
+    if (userAllowedEmployees.length > 0) {
+      const isCurrentValid = userAllowedEmployees.some(
+        (e: any) => String(e.employeeId || e.badgeId || e.id) === String(selectedBadge)
+      );
+      if (!selectedBadge || !isCurrentValid) {
+        const first = userAllowedEmployees[0];
+        setSelectedBadge(String(first.employeeId || first.badgeId || first.id));
+      }
+    } else {
+      setSelectedBadge('');
     }
-  }, [combinedEmployeesMap, selectedBadge]);
+  }, [userAllowedEmployees, selectedBadge]);
 
   // Current selected employee details
   const currentEmp = useMemo(() => {
@@ -579,6 +653,64 @@ function EmployeeReportInner() {
           </Button>
         </div>
       </div>
+
+      {/* User Scope & Access Indicator Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-50/80 dark:bg-blue-950/40 p-3 rounded-lg border border-blue-200 dark:border-blue-900 text-xs text-blue-900 dark:text-blue-200 print:hidden">
+        <div className="flex items-center gap-2">
+          {currentUser?.role === 'Admin' ? (
+            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+          ) : (
+            <Lock className="h-4 w-4 text-blue-600 shrink-0" />
+          )}
+          <span className="font-medium">
+            {currentUser?.role === 'Admin' ? (
+              isAr
+                ? `صلاحيات مسؤول النظام (${currentUser?.name || 'Admin'}): يتم عرض كافة العمالة بالكامل (${userAllowedEmployees.length} موظف)`
+                : `System Admin Permissions (${currentUser?.name || 'Admin'}): Viewing all employees (${userAllowedEmployees.length} total)`
+            ) : (
+              isAr
+                ? `عرض نطاق العمالة الخاصة بك (${currentUser?.name || 'المستخدم الحالي'}): يظهر فقط العمالة المسندة لحسابك (${userAllowedEmployees.length} موظف)`
+                : `Your Assigned Employees Scope (${currentUser?.name || 'Current User'}): Showing only workers linked to your account (${userAllowedEmployees.length} total)`
+            )}
+          </span>
+        </div>
+
+        {/* Admin option to filter scope by user */}
+        {currentUser?.role === 'Admin' && users && users.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline font-medium text-muted-foreground">
+              {isAr ? 'تصفية حسب نطاق المستخدم:' : 'Filter Scope by User:'}
+            </span>
+            <Select value={adminSelectedUserId} onValueChange={setAdminSelectedUserId}>
+              <SelectTrigger className="h-8 text-xs w-[180px] bg-white dark:bg-gray-900">
+                <SelectValue placeholder={isAr ? 'جميع العمالة' : 'All Employees'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{isAr ? 'جميع العمالة (كافة المستخدمين)' : 'All Employees'}</SelectItem>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name} ({u.role})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
+      {userAllowedEmployees.length === 0 && (
+        <Card className="border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-6 text-center print:hidden">
+          <AlertTriangle className="h-8 w-8 text-amber-600 mx-auto mb-2" />
+          <h3 className="text-base font-bold text-amber-800 dark:text-amber-200">
+            {isAr ? 'لا توجد عمالة مسجلة أو مسندة لمستخدمك' : 'No Workers Linked to Your Account'}
+          </h3>
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 max-w-lg mx-auto">
+            {isAr
+              ? 'حساب المستخدم الحالي غير مرتبط بأي عمالة في النظام. يرجى التواصل مع مدير النظام لإسناد عمالة لحسابك أومراجعة صلاحيات الوصول.'
+              : 'Your current user account is not linked to any worker records. Please contact system admin to assign workers to your profile.'}
+          </p>
+        </Card>
+      )}
 
       {/* 2. Employee Selector & Month Picker Bar */}
       <Card className="border shadow-sm bg-gradient-to-r from-blue-50/50 via-white to-slate-50/50 dark:from-gray-900 dark:to-gray-950 print:hidden">
