@@ -464,62 +464,80 @@ function TimesheetHistoryContent() {
     const employeeDailyProjects: Record<string, Record<string, string[]>> = {};
 
     Object.entries(empRawGroup).forEach(([empKey, data]) => {
-      const proj = data.primaryRes;
-
-      // For non-admin users, only include employees whose primary residence
-      // is mapped to one of the user's assigned residences. Prefer the
-      // explicit projectToResidenceMap; fall back to name comparison only
-      // if no mapping exists.
-      if (currentUser?.role !== 'Admin') {
-        const mappedResidenceId = projectToResidenceMap[proj];
-        if (mappedResidenceId) {
-          if (!userResidences.includes(mappedResidenceId)) {
-            return;
-          }
-        } else {
-          const projLower = (proj || '').toLowerCase();
-          if (!projLower || !allowedProjectNames.includes(projLower)) {
-            return;
-          }
-        }
+      const projectsAppearedIn = Object.keys(data.residenceCounts);
+      if (projectsAppearedIn.length === 0) {
+        projectsAppearedIn.push(data.primaryRes || 'Unassigned / Outside');
       }
 
-      const currentUserData = employeesMap[empKey] || {};
-
-      if (!grouped[proj]) grouped[proj] = {};
-      if (!grouped[proj][empKey]) {
-        grouped[proj][empKey] = {
-          name: currentUserData.name || currentUserData.nameAr || data.allRecords[0]?.firstName || empKey,
-          profession: currentUserData.professionAr || currentUserData.profession || data.allRecords[0]?.department || '-',
-          department: currentUserData.department || data.allRecords[0]?.department || '-',
-          daily: {},
-          totalRH: 0,
-          totalOT: 0,
-          absences: 0
-        };
-      }
-
-      data.allRecords.forEach(record => {
-        const dateStr = record.date;
-        const prevRecord = grouped[proj][empKey].daily[dateStr];
-        
-        // If there's multiple records for one day in different residence
-        if (prevRecord) {
-           // Heuristic: If one has hours and the other doesn't, pick the one with hours
-           if ((record.totalHours || 0) > (prevRecord.totalHours || 0)) {
-               grouped[proj][empKey].daily[dateStr] = { ...record };
-           }
-        } else {
-           grouped[proj][empKey].daily[dateStr] = { ...record };
+      projectsAppearedIn.forEach(proj => {
+        // For non-admin users, only include employees whose residence
+        // is mapped to one of the user's assigned residences.
+        if (currentUser?.role !== 'Admin') {
+          const mappedResidenceId = projectToResidenceMap[proj];
+          if (mappedResidenceId) {
+            if (!userResidences.includes(mappedResidenceId)) {
+              return;
+            }
+          } else {
+            const projLower = (proj || '').toLowerCase();
+            if (!projLower || !allowedProjectNames.includes(projLower)) {
+              return;
+            }
+          }
         }
 
-        // Track project participation for indicators
-        if (!employeeDailyProjects[empKey]) employeeDailyProjects[empKey] = {};
-        if (!employeeDailyProjects[empKey][dateStr]) employeeDailyProjects[empKey][dateStr] = [];
-        const recProj = record.projectName || 'Unassigned / Outside';
-        if (!employeeDailyProjects[empKey][dateStr].includes(recProj)) {
-           employeeDailyProjects[empKey][dateStr].push(recProj);
+        const currentUserData = employeesMap[empKey] || {};
+
+        if (!grouped[proj]) grouped[proj] = {};
+        if (!grouped[proj][empKey]) {
+          grouped[proj][empKey] = {
+            name: currentUserData.name || currentUserData.nameAr || data.allRecords[0]?.firstName || empKey,
+            profession: currentUserData.professionAr || currentUserData.profession || data.allRecords[0]?.department || '-',
+            department: currentUserData.department || data.allRecords[0]?.department || '-',
+            daily: {},
+            totalRH: 0,
+            totalOT: 0,
+            absences: 0
+          };
         }
+
+        data.allRecords.forEach(record => {
+          const dateStr = record.date;
+          const recProj = record.projectName || 'Unassigned / Outside';
+          const isElsewhereRec = recProj !== proj;
+          const prevRecord = grouped[proj][empKey].daily[dateStr];
+
+          if (isElsewhereRec) {
+             if (!prevRecord || prevRecord.status === 'Elsewhere') {
+                 grouped[proj][empKey].daily[dateStr] = {
+                     status: 'Elsewhere', 
+                     hasOtherResidence: true,
+                     otherProjectNames: [...(prevRecord?.otherProjectNames || []), recProj]
+                 };
+             } else {
+                 grouped[proj][empKey].daily[dateStr].hasOtherResidence = true;
+                 grouped[proj][empKey].daily[dateStr].otherProjectNames = grouped[proj][empKey].daily[dateStr].otherProjectNames || [];
+                 if (!grouped[proj][empKey].daily[dateStr].otherProjectNames.includes(recProj)) {
+                     grouped[proj][empKey].daily[dateStr].otherProjectNames.push(recProj);
+                 }
+             }
+          } else {
+             if (prevRecord && prevRecord.status !== 'Elsewhere') {
+                 if ((record.totalHours || 0) > (prevRecord.totalHours || 0)) {
+                     grouped[proj][empKey].daily[dateStr] = { ...record };
+                 }
+             } else {
+                 grouped[proj][empKey].daily[dateStr] = { ...record };
+             }
+          }
+
+          // Track project participation for indicators
+          if (!employeeDailyProjects[empKey]) employeeDailyProjects[empKey] = {};
+          if (!employeeDailyProjects[empKey][dateStr]) employeeDailyProjects[empKey][dateStr] = [];
+          if (!employeeDailyProjects[empKey][dateStr].includes(recProj)) {
+             employeeDailyProjects[empKey][dateStr].push(recProj);
+          }
+        });
       });
     });
 

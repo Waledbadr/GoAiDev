@@ -329,6 +329,7 @@ export default function OrderDetailPage() {
                   body {
                     -webkit-print-color-adjust: exact;
                     print-color-adjust: exact;
+                    background-color: white !important;
                     font-size: 13px !important; /* base body size */
                     line-height: 1.25 !important; /* was 1.15 */
                     margin: 0 !important;
@@ -347,6 +348,7 @@ export default function OrderDetailPage() {
                     background-color: white !important;
                     color: black !important;
                   }
+                  .print-only-logo { display: none; }
                   .no-print { display: none !important; }
 
                   /* Compact table for printing */
@@ -355,7 +357,7 @@ export default function OrderDetailPage() {
                     font-weight: 700 !important;
                     font-size: 10px !important; /* was 9px */
                     padding: 4px 6px !important; /* was 3px 4px */
-                    background: #f2f3f5 !important;
+                    background: white !important;
                     border-bottom: 1px solid #e2e8f0 !important;
                     color: #111 !important;
                     white-space: nowrap !important;
@@ -365,11 +367,12 @@ export default function OrderDetailPage() {
                     padding: 3px 6px !important; /* was 2px 4px */
                     border-top: 1px solid #f1f5f9 !important;
                     vertical-align: middle !important;
+                    background: white !important;
                   }
                   .print-compact-table .category-row td {
                     padding-top: 4px !important; /* was 3px */
                     padding-bottom: 4px !important; /* was 3px */
-                    background: #fafafa !important;
+                    background: white !important;
                     color: #0f766e !important;
                     font-weight: 700 !important;
                     border-top: 1px solid #e2e8f0 !important;
@@ -402,11 +405,26 @@ export default function OrderDetailPage() {
                   .print-date { font-size: 14px !important; color: #1f2937 !important; }
 
                   /* Compact notes card on print */
-                  .print-notes-card { margin-bottom: 8px !important; }
-                  .print-notes-header { padding-top: 4px !important; padding-bottom: 2px !important; }
+                  .print-notes-card { margin-bottom: 8px !important; background-color: white !important; border: 1px solid #e5e7eb !important; box-shadow: none !important; }
+                  .print-notes-header { padding-top: 4px !important; padding-bottom: 2px !important; background-color: white !important; }
                   .print-notes-title { font-size: 12px !important; color: #0f766e !important; font-weight: 700 !important; }
                   .print-notes-content { padding-top: 0 !important; padding-bottom: 4px !important; }
                   .print-notes-text { font-size: 11px !important; color: #111 !important; }
+
+                  .print-only-logo {
+                    display: none;
+                  }
+                  
+                  /* These rules must be direct children of the main @media print block */
+                  .print-only-logo {
+                    display: flex !important;
+                    justify-content: center;
+                    align-items: center;
+                  }
+                  .print-only-logo img {
+                    height: 60px !important;
+                    object-fit: contain !important;
+                  }
 
                   /* Total row */
                   .print-total { margin-top: 6px !important; padding-top: 6px !important; border-top: 1px solid #e5e7eb !important; font-size: 11px !important; /* was 10px */ }
@@ -465,14 +483,20 @@ export default function OrderDetailPage() {
             <Card className="printable-area">
                 <CardHeader className="border-b print:border-b-2">
                     <div className="flex justify-between items-start">
-                        <div>
+                        <div className="w-1/3">
                             {/* Title: English only as requested */}
                             <CardTitle className="text-3xl print-title print-header-title">Materials Request</CardTitle>
-                            <CardDescription className="text-lg print-id">ID: #{formatOrderId(order.id)}</CardDescription>
+                            <CardDescription className="text-lg print-id flex flex-col">
+                                <span>ID: #{formatOrderId(order.id)}</span>
+                            </CardDescription>
                         </div>
-                        <div className="text-right">
+                        <div className="w-1/3 print-only-logo">
+                            <img src="/logo.png" alt="SACODECO CPC Logo" />
+                        </div>
+                        <div className="w-1/3 text-right">
                             <p className="font-semibold print-residence-title" style={{ fontWeight: 700 }}>{residenceHeaderText}</p>
                             <p className="text-sm text-muted-foreground print-date">{formattedOrderDate}</p>
+                            <p className="text-sm font-semibold text-gray-800 mt-1">Department: Housing</p>
                             <Badge className="mt-2 print-badge status-badge" variant={
                                 order.status === 'Delivered' ? 'default'
                                 : order.status === 'Approved' ? 'secondary'
@@ -485,35 +509,25 @@ export default function OrderDetailPage() {
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent className="pt-6">
-                     {order.notes && (
-                        <Card className="mb-4 bg-muted/50 print-bg-muted print-notes-card">
-                            <CardHeader className="py-2 print-notes-header">
-                                <div className="flex items-baseline gap-2 flex-wrap">
-                                    <CardTitle className="text-base text-primary print-notes-title">Notes:</CardTitle>
-                                    <span className="text-sm text-foreground print-notes-text" dir="auto">{order.notes}</span>
-                                </div>
-                            </CardHeader>
-                        </Card>
-                    )}
-                    <Table className="print-table print-compact-table">
-            <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[45%]">الصنف • Item</TableHead>
-                                <TableHead className="w-[25%]">ملاحظات • Notes</TableHead>
-                                <TableHead className="w-[10%]">وحدة • Unit</TableHead>
-                                <TableHead className="w-[10%] text-right">الكمية • Qty</TableHead>
-                <TableHead className="w-[10%] text-center">المتوفر • Stock</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                <CardContent className="pt-2">
+                    <table className="w-full text-sm print-table print-compact-table">
+                        <thead className="[&_tr]:border-b">
+                            <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                <th className="h-12 px-4 text-left rtl:text-right align-middle font-medium text-muted-foreground w-[45%]">الصنف • Item</th>
+                                <th className="h-12 px-4 text-left rtl:text-right align-middle font-medium text-muted-foreground w-[25%]">ملاحظات • Notes</th>
+                                <th className="h-12 px-4 text-left rtl:text-right align-middle font-medium text-muted-foreground w-[10%]">وحدة • Unit</th>
+                                <th className="h-12 px-4 text-left rtl:text-right align-middle font-medium text-muted-foreground w-[10%] text-right">الكمية • Qty</th>
+                                <th className="h-12 px-4 text-left rtl:text-right align-middle font-medium text-muted-foreground w-[10%] text-center">المتوفر • Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody className="[&_tr:last-child]:border-0">
                             {Object.entries(groupedItems).map(([category, items]) => (
                                 <React.Fragment key={category}>
-                                    <TableRow key={`cat-${category}`} className="bg-muted/50 hover:bg-muted/50 print-bg-muted category-row">
-                                        <TableCell colSpan={5} className="font-semibold text-primary capitalize py-2">
+                                    <tr key={`cat-${category}`} className="bg-muted/50 hover:bg-muted/50 print-bg-muted category-row border-b transition-colors">
+                                        <td colSpan={5} className="p-4 align-middle font-semibold text-primary capitalize py-2">
                                             {category}
-                                        </TableCell>
-                                    </TableRow>
+                                        </td>
+                                    </tr>
                                     {items.map((item: OrderItem, idx: number) => {
                                         // Safety check for item integrity
                                         if (!item || typeof item !== 'object') return null;
@@ -531,26 +545,36 @@ export default function OrderDetailPage() {
                                         // Safe key generation
                                         const safeId = item.id || `unknown-${idx}`;
                                         return (
-                                                                                        <TableRow key={`${safeId}-${idx}`}>
-                                                <TableCell className="font-medium">
+                                            <tr key={`${safeId}-${idx}`} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                                <td className="p-4 align-middle font-medium">
                                                     {en.base || item.nameEn} | {ar.base || item.nameAr}
-                                                </TableCell>
-                                                <TableCell className="notes-cell print-notes">
+                                                </td>
+                                                <td className="p-4 align-middle notes-cell print-notes">
                                                     <span className="bidi-notes">{notes}</span>
-                                                </TableCell>
-                                                <TableCell>{item.unit}</TableCell>
-                                                <TableCell className="text-right font-medium">{item.quantity}</TableCell>
-                                                                                                                                                <TableCell className="text-center">{handleGetStockForResidence(item)}</TableCell>
-                                            </TableRow>
+                                                </td>
+                                                <td className="p-4 align-middle">{item.unit}</td>
+                                                <td className="p-4 align-middle text-right font-medium">{item.quantity}</td>
+                                                <td className="p-4 align-middle text-center">{handleGetStockForResidence(item)}</td>
+                                            </tr>
                                         );
                                     })}
                                 </React.Fragment>
                             ))}
-                        </TableBody>
-                    </Table>
+                        </tbody>
+                    </table>
                     
-                    <div className="mt-6 text-right font-bold text-lg pr-4 border-t pt-4 print-total">
-                        Total Items: {totalItems}
+                    <div className="mt-6 flex justify-between items-start border-t pt-4 print-total">
+                        <div className="text-left flex-1 pr-4">
+                            {order.notes && (
+                                <>
+                                    <span className="font-bold text-primary print-notes-title">Notes: </span>
+                                    <span className="text-foreground print-notes-text" dir="auto">{order.notes}</span>
+                                </>
+                            )}
+                        </div>
+                        <div className="text-right font-bold text-lg pl-4 whitespace-nowrap">
+                            Total Items: {totalItems}
+                        </div>
                     </div>
                 </CardContent>
 

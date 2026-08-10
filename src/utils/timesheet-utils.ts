@@ -408,7 +408,33 @@ export const processPunches = (
                      // Create a dummy record
                      // Attempt to get employee name safely
                      const empName = emp.name || emp.nameAr || emp.firstName || emp.nameEn || empId;
-                     const empProject = emp.projectName || emp.project || emp.residenceId || 'Unknown Residence';
+                     
+                     // Find the last known project for this employee from actual punches
+                     let lastProject = null;
+                     let lastDate = "";
+                     // Look backward
+                     for (const p of parsed) {
+                         if (String(p.employeeId) === String(empId) && p.date < dateStr) {
+                             if (!lastProject || p.date > lastDate) {
+                                 lastProject = p.projectName;
+                                 lastDate = p.date;
+                             }
+                         }
+                     }
+                     // Look forward if no backward punch exists
+                     if (!lastProject) {
+                         lastDate = "9999-99-99";
+                         for (const p of parsed) {
+                             if (String(p.employeeId) === String(empId) && p.date > dateStr) {
+                                 if (!lastProject || p.date < lastDate) {
+                                     lastProject = p.projectName;
+                                     lastDate = p.date;
+                                 }
+                             }
+                         }
+                     }
+                     
+                     const empProject = lastProject || emp.projectName || emp.project || emp.residenceId || 'Unknown Residence';
 
                      parsed.push({
                          id: key,

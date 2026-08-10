@@ -678,11 +678,26 @@ function EmployeeReportInner() {
     let daysWeekend = 0;
     let totalRH = 0;
     let totalOT = 0;
+    let expectedRH = 0;
     let expectedDays = 0;
 
     Object.values(dailyMatrix).forEach((d: any) => {
       if (d.status === 'Future') return;
       expectedDays++;
+      
+      let dayExpectedRH = currentEmp?.dailyHours || 8;
+      const isThu = new Date(d.date).getDay() === 4;
+      if ((currentEmp?.dailyHours === 8.5 || !currentEmp?.dailyHours) && isThu) {
+         dayExpectedRH = 5.5;
+      }
+      
+      if (d.status === 'Leave' || d.status === 'On Leave' || d.status === 'Sick Leave' || d.status === 'Permission' || d.status === 'Weekend' || d.status === 'Holiday') {
+          dayExpectedRH = 8;
+      }
+
+      if (d.status !== 'Transferred') {
+         expectedRH += dayExpectedRH;
+      }
 
       if (d.status === 'Present' || d.status === 'Permission') {
         daysWorked++;
@@ -704,7 +719,7 @@ function EmployeeReportInner() {
       }
     });
 
-    const attendanceRate = expectedDays > 0 ? Math.round(((daysWorked + daysWeekend + daysLeave) / expectedDays) * 100) : 0;
+    const attendanceRate = expectedRH > 0 ? Math.round((totalRH / expectedRH) * 100) : 0;
     const baseSalary = currentEmp?.monthlySalary || 3000;
     const hourlyRate = baseSalary / 240; // ~240 hrs/month
     const otAmount = totalOT * hourlyRate * 1.5;
@@ -1487,24 +1502,22 @@ function EmployeeReportInner() {
         {currentEmp ? (
           <div className="flex flex-col justify-between h-full space-y-2 text-xs">
             {/* 1. Official Document Header */}
-            <div className="flex items-center justify-between border-b-2 border-blue-900 pb-2">
-              <div className="text-right">
-                <h1 className="text-base font-extrabold text-blue-950">شركة مساكن العمالية للخدمات المسانده</h1>
-                <p className="text-[10px] text-gray-700 font-semibold">إدارة الموارد البشرية والتشغيل - قسم الحضور والدوام</p>
-                <div className="inline-block bg-blue-900 text-white font-bold px-2 py-0.5 rounded text-[11px] mt-1">
-                  تقرير كشف دوام وحضور موظف
-                </div>
+            <div className="grid grid-cols-3 items-center border-b-2 border-slate-800 pb-3 mb-2">
+              <div className="text-right space-y-1">
+                <h1 className="text-sm font-black text-slate-900">الشركة السعودية للإنماء العمراني (ساكوديكو)</h1>
+                <p className="text-[10px] text-slate-600 font-bold">إدارة السكنات - قسم الحضور والانصراف</p>
               </div>
 
-              <div className="text-center px-2 py-1 bg-slate-100 rounded border border-slate-300">
-                <p className="text-[10px] font-bold text-slate-800">كشف معتمد من أجهزة البصمة</p>
-                <p className="text-[9px] text-slate-600 font-mono mt-0.5">VERIFIED BIOMETRIC TIMESHEET</p>
+              <div className="flex justify-center">
+                 <div className="px-5 py-1.5 bg-slate-900 text-white rounded-md border-b-2 border-slate-700 shadow-sm">
+                   <h2 className="font-bold text-[12px] tracking-wide">تقرير كشف حضور وانصراف موظف</h2>
+                 </div>
               </div>
 
-              <div className="text-left text-[9px] text-gray-700 space-y-0.5">
-                <p><span className="font-bold">تاريخ الطباعة:</span> {new Date().toLocaleDateString('ar-SA')} - {new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
-                <p><span className="font-bold">الفترة المالية:</span> <span className="font-mono text-blue-900 font-bold">{periodLabel} ({filterMonth})</span></p>
-                <p><span className="font-bold">رقم المستند:</span> <span className="font-mono">TS-{selectedBadge}-{filterMonth}</span></p>
+              <div className="text-left text-[9px] text-slate-700 space-y-1">
+                <p><span className="font-bold text-slate-900">تاريخ الطباعة:</span> <span className="font-mono">{new Date().toLocaleDateString('ar-SA')} - {new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span></p>
+                <p><span className="font-bold text-slate-900">الفترة المالية:</span> <span className="font-mono font-bold text-slate-900">{periodLabel} ({filterMonth})</span></p>
+                <p><span className="font-bold text-slate-900">رقم المستند:</span> <span className="font-mono">TS-{selectedBadge}-{filterMonth}</span></p>
               </div>
             </div>
 
@@ -1609,7 +1622,9 @@ function EmployeeReportInner() {
                           <td className="p-0.5 border-l border-gray-300 text-center">
                             {d.status === 'Present' && <span className="text-emerald-700 font-bold">حاضر</span>}
                             {d.status === 'Absent' && <span className="text-rose-700 font-bold">غائب</span>}
-                            {d.status === 'Leave' && <span className="text-indigo-700 font-bold">إجازة</span>}
+                            {(d.status === 'Leave' || d.status === 'On Leave') && <span className="text-indigo-700 font-bold">إجازة</span>}
+                            {d.status === 'Sick Leave' && <span className="text-indigo-700 font-bold">مرضي</span>}
+                            {d.status === 'Permission' && <span className="text-indigo-700 font-bold">استئذان</span>}
                             {d.status === 'Exception' && <span className="text-amber-700 font-bold">استثناء</span>}
                             {d.status === 'Transferred' && <span className="text-gray-600 font-bold">منقول</span>}
                             {d.status === 'Weekend' && <span className="text-sky-700 font-bold">عطلة</span>}
