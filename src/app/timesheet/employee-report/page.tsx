@@ -952,7 +952,7 @@ function EmployeeReportInner() {
 
       {/* 3. Employee Profile Spotlight Banner */}
       {currentEmp ? (
-        <Card className="border shadow-md overflow-hidden bg-white dark:bg-gray-900">
+        <Card className="border shadow-md overflow-hidden bg-white dark:bg-gray-900 print:hidden">
           <div className="h-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500" />
           <CardContent className="p-6">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -1042,7 +1042,7 @@ function EmployeeReportInner() {
       ) : null}
 
       {/* 4. Monthly High-Level Key Metrics Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
         {/* Card 1: Days Worked */}
         <Card className="border shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
@@ -1115,7 +1115,7 @@ function EmployeeReportInner() {
       </div>
 
       {/* 5. Interactive Comprehensive Tabs Section */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full print:hidden">
         <TabsList className="grid grid-cols-2 md:grid-cols-4 w-full bg-slate-100 dark:bg-gray-900 p-1 rounded-xl">
           <TabsTrigger value="matrix" className="text-xs md:text-sm flex items-center gap-2">
             <Calendar className="w-4 h-4" />
@@ -1401,6 +1401,223 @@ function EmployeeReportInner() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* PRINT-ONLY OFFICIAL A4 REPORT TEMPLATE */}
+      <div className="hidden print:block text-black bg-white dir-rtl w-full">
+        <style jsx global>{`
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 4mm 5mm 4mm 5mm !important;
+            }
+            html, body {
+              background: #ffffff !important;
+              color: #000000 !important;
+              font-family: Arial, 'Segoe UI', Tahoma, sans-serif !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+            }
+            .print\\:hidden {
+              display: none !important;
+            }
+            .print\\:block {
+              display: block !important;
+            }
+          }
+        `}</style>
+
+        {currentEmp ? (
+          <div className="flex flex-col justify-between h-full space-y-2 text-xs">
+            {/* 1. Official Document Header */}
+            <div className="flex items-center justify-between border-b-2 border-blue-900 pb-2">
+              <div className="text-right">
+                <h1 className="text-base font-extrabold text-blue-950">شركة مساكن العمالية للخدمات المسانده</h1>
+                <p className="text-[10px] text-gray-700 font-semibold">إدارة الموارد البشرية والتشغيل - قسم الحضور والدوام</p>
+                <div className="inline-block bg-blue-900 text-white font-bold px-2 py-0.5 rounded text-[11px] mt-1">
+                  تقرير كشف دوام وحضور موظف
+                </div>
+              </div>
+
+              <div className="text-center px-2 py-1 bg-slate-100 rounded border border-slate-300">
+                <p className="text-[10px] font-bold text-slate-800">كشف معتمد من أجهزة البصمة</p>
+                <p className="text-[9px] text-slate-600 font-mono mt-0.5">VERIFIED BIOMETRIC TIMESHEET</p>
+              </div>
+
+              <div className="text-left text-[9px] text-gray-700 space-y-0.5">
+                <p><span className="font-bold">تاريخ الطباعة:</span> {new Date().toLocaleDateString('ar-SA')} - {new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
+                <p><span className="font-bold">الفترة المالية:</span> <span className="font-mono text-blue-900 font-bold">{periodLabel} ({filterMonth})</span></p>
+                <p><span className="font-bold">رقم المستند:</span> <span className="font-mono">TS-{selectedBadge}-{filterMonth}</span></p>
+              </div>
+            </div>
+
+            {/* 2. Employee Metadata Grid Table */}
+            <div className="border border-slate-400 rounded bg-slate-50 p-2 text-[10px] leading-tight">
+              <div className="grid grid-cols-4 gap-x-4 gap-y-1">
+                <div>
+                  <span className="text-gray-500 block text-[9px]">اسم الموظف / Employee Name:</span>
+                  <span className="font-bold text-gray-900 text-[11px]">{currentEmp.nameAr}</span>
+                  {currentEmp.name && <span className="text-[9px] text-gray-600 block dir-ltr text-right">({currentEmp.name})</span>}
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">الرقم الوظيفي / Badge ID:</span>
+                  <span className="font-mono font-bold text-blue-900 text-[11px]">#{currentEmp.employeeId || currentEmp.badgeId}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">المهنة / Profession:</span>
+                  <span className="font-semibold text-gray-900">{currentEmp.professionAr || currentEmp.profession || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">السكن / المشروع Residence:</span>
+                  <span className="font-semibold text-gray-900">{currentEmp.projectName || currentEmp.residenceName || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">الحالة / Operating Status:</span>
+                  <span className="font-bold text-emerald-700">{currentEmp.status || 'Active'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">ساعات الدوام Daily Shift:</span>
+                  <span className="font-semibold text-gray-900">{currentEmp.dailyHours || 8} ساعات/يوم</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">الراتب الأساسي / Basic Salary:</span>
+                  <span className="font-bold text-gray-900">{monthlyStats.baseSalary.toLocaleString()} ريال</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-[9px]">الاستحقاق التقديري / Total Payable:</span>
+                  <span className="font-bold text-blue-900 text-[11px]">{monthlyStats.estimatedPayable.toLocaleString()} ريال</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Monthly Metrics Summary Strip */}
+            <div className="grid grid-cols-6 gap-1 text-center text-[9px]">
+              <div className="p-1 border border-emerald-300 bg-emerald-50 rounded">
+                <span className="text-gray-600 block">أيام العمل (Worked)</span>
+                <span className="font-bold text-emerald-800 text-[11px]">{monthlyStats.daysWorked}</span>
+              </div>
+              <div className="p-1 border border-rose-300 bg-rose-50 rounded">
+                <span className="text-gray-600 block">أيام الغياب (Absent)</span>
+                <span className="font-bold text-rose-800 text-[11px]">{monthlyStats.daysAbsent}</span>
+              </div>
+              <div className="p-1 border border-indigo-300 bg-indigo-50 rounded">
+                <span className="text-gray-600 block">إجازات/عطلات (Leave/Wknd)</span>
+                <span className="font-bold text-indigo-800 text-[11px]">{monthlyStats.daysLeave + monthlyStats.daysWeekend}</span>
+              </div>
+              <div className="p-1 border border-blue-300 bg-blue-50 rounded">
+                <span className="text-gray-600 block">ساعات عادية (RH)</span>
+                <span className="font-bold text-blue-900 text-[11px]">{monthlyStats.totalRH} hr</span>
+              </div>
+              <div className="p-1 border border-orange-300 bg-orange-50 rounded">
+                <span className="text-gray-600 block">ساعات إضافية (OT)</span>
+                <span className="font-bold text-orange-800 text-[11px]">+{monthlyStats.totalOT} hr</span>
+              </div>
+              <div className="p-1 border border-blue-400 bg-blue-100 rounded">
+                <span className="text-gray-600 block">نسبة الالتزام (Compliance)</span>
+                <span className="font-bold text-blue-950 text-[11px]">{monthlyStats.attendanceRate}%</span>
+              </div>
+            </div>
+
+            {/* 4. Split 2-Column Daily Attendance Matrix (Side-by-side tables for 1-page fit) */}
+            {(() => {
+              const days = Object.values(dailyMatrix);
+              const half = Math.ceil(days.length / 2);
+              const col1 = days.slice(0, half);
+              const col2 = days.slice(half);
+
+              const renderTable = (items: any[]) => (
+                <table className="w-full text-[8.5px] border-collapse border border-gray-400">
+                  <thead>
+                    <tr className="bg-slate-200 text-slate-900 font-bold border-b border-gray-400">
+                      <th className="p-0.5 border-l border-gray-300 text-center w-16">التاريخ</th>
+                      <th className="p-0.5 border-l border-gray-300 text-center w-10">اليوم</th>
+                      <th className="p-0.5 border-l border-gray-300 text-center w-14">الحالة</th>
+                      <th className="p-0.5 border-l border-gray-300 text-center w-11">دخول</th>
+                      <th className="p-0.5 border-l border-gray-300 text-center w-11">خروج</th>
+                      <th className="p-0.5 border-l border-gray-300 text-center w-8">RH</th>
+                      <th className="p-0.5 text-center w-8">OT</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-300">
+                    {items.map((d: any) => {
+                      const isWknd = d.isFriday;
+                      const isAbs = d.status === 'Absent';
+                      return (
+                        <tr
+                          key={d.date}
+                          className={isWknd ? 'bg-sky-50' : isAbs ? 'bg-rose-50/60' : 'hover:bg-gray-50'}
+                        >
+                          <td className="p-0.5 border-l border-gray-300 font-mono text-center font-semibold">{d.date?.substring(5)}</td>
+                          <td className="p-0.5 border-l border-gray-300 text-center">{d.dayName}</td>
+                          <td className="p-0.5 border-l border-gray-300 text-center">
+                            {d.status === 'Present' && <span className="text-emerald-700 font-bold">حاضر</span>}
+                            {d.status === 'Absent' && <span className="text-rose-700 font-bold">غائب</span>}
+                            {d.status === 'Leave' && <span className="text-indigo-700 font-bold">إجازة</span>}
+                            {d.status === 'Exception' && <span className="text-amber-700 font-bold">استثناء</span>}
+                            {d.status === 'Transferred' && <span className="text-gray-600 font-bold">منقول</span>}
+                            {d.status === 'Weekend' && <span className="text-sky-700 font-bold">عطلة</span>}
+                            {d.status === 'Holiday' && <span className="text-purple-700 font-bold">رسمية</span>}
+                            {d.status === 'Future' && <span className="text-gray-400">-</span>}
+                          </td>
+                          <td className="p-0.5 border-l border-gray-300 font-mono text-emerald-800 text-center font-bold">
+                            {d.checkIn || '-'}
+                          </td>
+                          <td className="p-0.5 border-l border-gray-300 font-mono text-blue-800 text-center font-bold">
+                            {d.checkOut || '-'}
+                          </td>
+                          <td className="p-0.5 border-l border-gray-300 text-center font-semibold">
+                            {d.regularHours > 0 ? d.regularHours : '-'}
+                          </td>
+                          <td className="p-0.5 text-center font-bold text-orange-700">
+                            {d.overtimeHours > 0 ? `+${d.overtimeHours}` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+
+              return (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>{renderTable(col1)}</div>
+                  <div>{renderTable(col2)}</div>
+                </div>
+              );
+            })()}
+
+            {/* 5. Official Approvals & Signatures Box */}
+            <div className="border border-gray-400 rounded p-2 bg-slate-50 mt-1">
+              <div className="grid grid-cols-3 gap-4 text-center text-[9px]">
+                <div>
+                  <p className="font-bold text-gray-900 mb-4">توقيع الموظف (Employee Signature)</p>
+                  <p className="text-gray-400">________________________</p>
+                  <p className="text-[8px] text-gray-500 mt-1">التاريخ: ____ / ____ / ________</p>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 mb-4">مشرف الموقع / السكن (Site Supervisor)</p>
+                  <p className="text-gray-400">________________________</p>
+                  <p className="text-[8px] text-gray-500 mt-1">التاريخ: ____ / ____ / ________</p>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 mb-4">اعتماد الموارد البشرية (HR Approval)</p>
+                  <p className="text-gray-400">________________________</p>
+                  <p className="text-[8px] text-gray-500 mt-1">التاريخ: ____ / ____ / ________</p>
+                </div>
+              </div>
+              <div className="text-[8px] text-center text-gray-500 border-t border-gray-300 pt-1 mt-2">
+                هذا التقرير مستخرج آلياً من نظام إدارة السكنات والدوام الذكي - شركة مساكن العمالية للخدمات المسانده - معتمد برقم TS-{selectedBadge}-{filterMonth}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-12 text-center text-gray-500">
+            يرجى اختيار الموظف لعرض التقرير القابل للطباعة
+          </div>
+        )}
+      </div>
     </div>
   );
 }
