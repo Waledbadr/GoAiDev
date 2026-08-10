@@ -19,6 +19,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 
 import {
   UserCircle,
@@ -40,6 +43,7 @@ import {
   DollarSign,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   FileText,
   MapPin,
   Laptop,
@@ -251,6 +255,7 @@ function EmployeeReportInner() {
   const initialMonth = searchParams.get('month') || getFiscalMonthForDate(new Date());
 
   const [selectedBadge, setSelectedBadge] = useState<string>(initialBadge);
+  const [comboboxOpen, setComboboxOpen] = useState(false);
   const [filterMonth, setFilterMonth] = useState<string>(initialMonth);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('matrix');
@@ -471,36 +476,40 @@ function EmployeeReportInner() {
         );
 
         // 2. Fetch Leaves
-        const leavesQuery = query(
-          collection(db as any, 'timesheetLeaves'),
-          where('employeeId', '==', empKey)
-        );
+        const leavesQ1 = query(collection(db as any, 'timesheetLeaves'), where('employeeId', '==', empKey));
+        const leavesQ2 = query(collection(db as any, 'timesheetLeaves'), where('badgeId', '==', empKey));
 
         // 3. Fetch Transfers
-        const transfersQuery = query(
-          collection(db as any, 'timesheetTransfers'),
-          where('employeeId', '==', empKey)
-        );
+        const transfersQ1 = query(collection(db as any, 'timesheetTransfers'), where('employeeId', '==', empKey));
+        const transfersQ2 = query(collection(db as any, 'timesheetTransfers'), where('badgeId', '==', empKey));
 
         // 4. Fetch Exceptions
-        const exceptionsQuery = query(
-          collection(db as any, 'timesheetExceptions'),
-          where('employeeId', '==', empKey)
-        );
+        const exceptionsQ1 = query(collection(db as any, 'timesheetExceptions'), where('employeeId', '==', empKey));
+        const exceptionsQ2 = query(collection(db as any, 'timesheetExceptions'), where('badgeId', '==', empKey));
 
-        const [attSnap, leavesSnap, transfersSnap, exceptionsSnap] = await Promise.all([
+        const [attSnap, l1, l2, t1, t2, e1, e2] = await Promise.all([
           getDocs(attendanceQuery).catch(() => ({ docs: [] })),
-          getDocs(leavesQuery).catch(() => ({ docs: [] })),
-          getDocs(transfersQuery).catch(() => ({ docs: [] })),
-          getDocs(exceptionsQuery).catch(() => ({ docs: [] }))
+          getDocs(leavesQ1).catch(() => ({ docs: [] })),
+          getDocs(leavesQ2).catch(() => ({ docs: [] })),
+          getDocs(transfersQ1).catch(() => ({ docs: [] })),
+          getDocs(transfersQ2).catch(() => ({ docs: [] })),
+          getDocs(exceptionsQ1).catch(() => ({ docs: [] })),
+          getDocs(exceptionsQ2).catch(() => ({ docs: [] }))
         ]);
 
         if (!isSubscribed) return;
 
         const attList = attSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const lList = leavesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const tList = transfersSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const eList = exceptionsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+
+        const mergeDocs = (d1: any[], d2: any[]) => {
+          const map = new Map();
+          [...d1, ...d2].forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
+          return Array.from(map.values());
+        };
+
+        const lList = mergeDocs(l1.docs, l2.docs);
+        const tList = mergeDocs(t1.docs, t2.docs);
+        const eList = mergeDocs(e1.docs, e2.docs);
 
         setAttendanceRecords(attList);
         setLeaves(lList);
@@ -612,12 +621,8 @@ function EmployeeReportInner() {
 
       if (isFuture) {
         status = 'Future';
-      } else if (moveOutDate && dateStr >= moveOutDate && (!attRecord || (totalHours === 0 && punches.length === 0))) {
-        status = 'Transferred';
-      } else if (activeLeave) {
-        status = 'Leave';
-      } else if (activeException) {
-        status = 'Exception';
+      } else if (attRecord && attRecord.status && attRecord.status !== 'Incomplete') {
+        status = attRecord.status;
       } else if (attRecord && (totalHours > 0 || regularHours > 0 || (punches && punches.length > 0))) {
         status = 'Present';
       } else if (activeEvent) {
@@ -628,6 +633,19 @@ function EmployeeReportInner() {
         regularHours = 8;
       } else {
         status = 'Absent';
+      }
+
+      // Overrides (Local real-time evaluation over stale backend status)
+      if (activeLeave && (!attRecord || totalHours === 0 || status === 'Absent' || status === 'Leave' || status === 'On Leave' || status === 'Sick Leave')) {
+        status = (activeLeave.type === 'Sick' || activeLeave.type === 'مرضية') ? 'Sick Leave' : 
+                 (activeLeave.type === 'Permission' || activeLeave.type === 'استئذان' ? 'Permission' : 'On Leave');
+        if (totalHours === 0) {
+           regularHours = 8;
+        }
+      } else if (activeException && (!attRecord || totalHours === 0 || status === 'Absent')) {
+        status = 'Exception';
+      } else if (moveOutDate && dateStr >= moveOutDate && (!attRecord || totalHours === 0 || status === 'Absent')) {
+        status = 'Transferred';
       }
 
       matrix[dateStr] = {
@@ -666,13 +684,13 @@ function EmployeeReportInner() {
       if (d.status === 'Future') return;
       expectedDays++;
 
-      if (d.status === 'Present') {
+      if (d.status === 'Present' || d.status === 'Permission') {
         daysWorked++;
         totalRH += d.regularHours || 0;
         totalOT += d.overtimeHours || 0;
       } else if (d.status === 'Absent') {
         daysAbsent++;
-      } else if (d.status === 'Leave') {
+      } else if (d.status === 'Leave' || d.status === 'On Leave' || d.status === 'Sick Leave') {
         daysLeave++;
         totalRH += 8;
       } else if (d.status === 'Transferred') {
@@ -880,37 +898,68 @@ function EmployeeReportInner() {
       {/* 2. Employee Selector & Month Picker Bar */}
       <Card className="border shadow-sm bg-gradient-to-r from-blue-50/50 via-white to-slate-50/50 dark:from-gray-900 dark:to-gray-950 print:hidden">
         <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          {/* Employee Dropdown Search */}
-          <div className="flex-1 w-full flex flex-col md:flex-row gap-3 items-center">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                type="text"
-                placeholder={isAr ? 'ابحث باسم الموظف أو الرقم الوظيفي...' : 'Search by Employee Name or Badge ID...'}
-                className="pl-9 pr-3 bg-white dark:bg-gray-900"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            <Select value={selectedBadge} onValueChange={(val) => setSelectedBadge(val)}>
-              <SelectTrigger className="w-full md:w-[320px] bg-white dark:bg-gray-900">
-                <UserCircle className="w-4 h-4 mr-2 text-blue-600" />
-                <SelectValue placeholder={isAr ? 'اختر الموظف' : 'Select Employee'} />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {employeeOptions.map((emp: any) => (
-                  <SelectItem key={emp.employeeId || emp.badgeId || emp.id} value={emp.employeeId || emp.badgeId || emp.id}>
-                    <div className="flex items-center justify-between gap-2 w-full text-right">
-                      <span className="font-semibold">{emp.nameAr || emp.name}</span>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        #{emp.employeeId || emp.badgeId}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Employee Combobox Search */}
+          <div className="flex-1 w-full flex items-center">
+            <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={comboboxOpen}
+                  className="w-full md:w-[400px] justify-between bg-white dark:bg-gray-900 font-normal hover:bg-slate-50 dark:hover:bg-gray-800"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <UserCircle className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="truncate">
+                      {selectedBadge && currentEmp
+                        ? `${currentEmp.nameAr || currentEmp.name} (#${currentEmp.employeeId || currentEmp.badgeId})`
+                        : (isAr ? 'ابحث واختر الموظف...' : 'Search and select employee...')}
+                    </span>
+                  </div>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[400px] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput 
+                    placeholder={isAr ? 'ابحث بالاسم أو الرقم الوظيفي...' : 'Search by name or badge...'} 
+                    value={searchTerm}
+                    onValueChange={setSearchTerm}
+                  />
+                  <CommandList>
+                    <CommandEmpty>{isAr ? 'لم يتم العثور على موظف.' : 'No employee found.'}</CommandEmpty>
+                    <CommandGroup>
+                      {employeeOptions.map((emp: any) => {
+                        const empId = String(emp.employeeId || emp.badgeId || emp.id);
+                        return (
+                          <CommandItem
+                            key={empId}
+                            value={`${emp.nameAr} ${emp.name} ${empId}`}
+                            onSelect={() => {
+                              setSelectedBadge(empId);
+                              setComboboxOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 shrink-0",
+                                String(selectedBadge) === empId ? "opacity-100 text-blue-600" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex items-center justify-between gap-2 w-full text-right flex-1 truncate">
+                              <span className="font-semibold truncate">{emp.nameAr || emp.name}</span>
+                              <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                #{empId}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Month Switcher Controls */}
@@ -1180,8 +1229,14 @@ function EmployeeReportInner() {
                           {d.status === 'Absent' && (
                             <Badge variant="destructive">{isAr ? 'غائب' : 'Absent'}</Badge>
                           )}
-                          {d.status === 'Leave' && (
+                          {(d.status === 'Leave' || d.status === 'On Leave') && (
                             <Badge className="bg-indigo-500 text-white">{isAr ? 'إجازة' : 'Leave'}</Badge>
+                          )}
+                          {d.status === 'Sick Leave' && (
+                            <Badge className="bg-pink-500 text-white">{isAr ? 'مرضي' : 'Sick Leave'}</Badge>
+                          )}
+                          {d.status === 'Permission' && (
+                            <Badge className="bg-cyan-600 text-white">{isAr ? 'استئذان' : 'Permission'}</Badge>
                           )}
                           {d.status === 'Exception' && (
                             <Badge className="bg-amber-500 text-white">{isAr ? 'استثناء' : 'Exception'}</Badge>

@@ -15,7 +15,8 @@ export const calculateAttendanceStats = (
   events: TimesheetEvent[] = [],
   schedules: EmployeeSchedule[] = [],
   leaves: any[] = [],
-  transfers: any[] = [] // include transfers
+  transfers: any[] = [], // include transfers
+  allEmployees: any[] = [] // added allEmployees
 ): { totalHours: number; regularHours: number; overtimeHours: number; status: DailyAttendance['status'] } => {
   // 0. Check for transfers (Move In / Move Out)
   if (transfers && transfers.length > 0) {
@@ -35,7 +36,7 @@ export const calculateAttendanceStats = (
 
   // 1. Check if the employee is on an approved leave
   let activeLeave = leaves.find(l =>
-    (l.employeeId === employeeId || l.badgeId === employeeId) &&
+    (String(l.employeeId) === String(employeeId) || String(l.badgeId) === String(employeeId)) &&
     l.status !== 'Rejected' &&
     l.startDate <= date && (!l.endDate || l.endDate >= date) &&
     (!l.cutOffDate || date < l.cutOffDate)
@@ -65,11 +66,27 @@ export const calculateAttendanceStats = (
   const isThursday = dateObj.getDay() === 4;
   const isFriday = dateObj.getDay() === 5; // Weekend
 
-  // Default required hours
-  let requiredHours = isThursday ? 5.5 : 8.5;
+  // Determine base daily hours
+  let baseHours = 8.0;
   const empSchedule = schedules.find(s => s.employeeId === employeeId || (s as any).badgeId === employeeId);
-  if (empSchedule) {
-      requiredHours = isThursday ? (empSchedule.thursdayHours || 5.5) : (empSchedule.dailyHours || 8.5);
+  const employee = allEmployees.find(e => String(e.id) === String(employeeId) || String(e.employeeId) === String(employeeId) || String(e.badgeId) === String(employeeId));
+
+  if (empSchedule && empSchedule.dailyHours) {
+      baseHours = empSchedule.dailyHours;
+  } else if (employee && employee.dailyHours) {
+      baseHours = employee.dailyHours;
+  }
+
+  // Calculate required hours for the current day
+  let requiredHours = baseHours;
+  if (isThursday) {
+      if (empSchedule && empSchedule.thursdayHours) {
+          requiredHours = empSchedule.thursdayHours;
+      } else if (baseHours === 8.5) {
+          requiredHours = 5.5;
+      } else {
+          requiredHours = baseHours; // typically 8.0
+      }
   }
 
   // Find if it's a holiday / reduced event
@@ -94,19 +111,19 @@ export const calculateAttendanceStats = (
 
   // 2. Adjust stats if there's an active leave
   if (activeLeave) {
-    if (activeLeave.type === 'Annual' || activeLeave.type === 'ط³ظ†ظˆظٹط©' || activeLeave.type?.includes('Annual')) {
+    if (activeLeave.type === 'Annual' || activeLeave.type === 'سنوية' || activeLeave.type?.includes('Annual')) {
       status = 'On Leave';
       if (totalHoursNum === 0) {
         regularHours = 8;
         totalHoursNum = 8;
       }
-    } else if (activeLeave.type === 'Sick' || activeLeave.type === 'ظ…ط±ط¶ظٹط©') {
+    } else if (activeLeave.type === 'Sick' || activeLeave.type === 'مرضية') {
       status = 'Sick Leave';
       if (totalHoursNum === 0) {
         regularHours = 8;
         totalHoursNum = 8;
       }
-    } else if (activeLeave.type === 'Permission' || activeLeave.type === 'ط§ط³طھط¦ط°ط§ظ†') {
+    } else if (activeLeave.type === 'Permission' || activeLeave.type === 'استئذان') {
       status = 'Permission';
       // Let's assume a permission covers the gap up to 8 hours for now.
       if (totalHoursNum > 0 && totalHoursNum < 8) {
@@ -115,6 +132,13 @@ export const calculateAttendanceStats = (
       } else if (totalHoursNum === 0) {
          regularHours = 8;
          totalHoursNum = 8;
+      }
+    } else {
+      // Fallback for generic leaves
+      status = 'On Leave';
+      if (totalHoursNum === 0) {
+        regularHours = 8;
+        totalHoursNum = 8;
       }
     }
   } else {
@@ -191,7 +215,8 @@ export const mergeAttendanceRecord = (
   events: TimesheetEvent[] = [],
   schedules: EmployeeSchedule[] = [],
   leaves: any[] = [],
-  transfers: any[] = []
+  transfers: any[] = [],
+  allEmployees: any[] = []
 ): DailyAttendance => {
   const existingPunches = Array.isArray(existing.punches) ? existing.punches : [];
   const incomingPunches = Array.isArray(incoming.punches) ? incoming.punches : [];
@@ -229,7 +254,8 @@ export const mergeAttendanceRecord = (
     events,
     schedules,
     leaves,
-    employeeTransfers
+    employeeTransfers,
+    allEmployees
   );
 
   return {

@@ -525,12 +525,12 @@ function TimesheetHistoryContent() {
 
     // Populate Leaves with Deduplication
     leaves.forEach(l => {
-      if (!l.badgeId || !l.startDate || !l.endDate) return;
-      const badge = l.badgeId;
+      const badge = l.badgeId || l.employeeId;
+      if (!badge || !l.startDate || !l.endDate) return;
 
       if (deferredSearchTerm) {
         const searchLower = deferredSearchTerm.toLowerCase();
-        if (!(l.name?.toLowerCase().includes(searchLower) || l.nameAr?.toLowerCase().includes(searchLower) || badge.toLowerCase().includes(searchLower))) return;
+        if (!(l.name?.toLowerCase().includes(searchLower) || l.nameAr?.toLowerCase().includes(searchLower) || String(badge).toLowerCase().includes(searchLower))) return;
       }
 
       // Determine where this leave should be shown: official residence or the one they appear in
@@ -561,6 +561,8 @@ function TimesheetHistoryContent() {
             grouped[primaryRes][badge].daily[dateStr] = { status: 'Leave', leaveType: l.type || 'Leave', reason: l.reason || '' };
           } else {
              grouped[primaryRes][badge].daily[dateStr].status = 'Leave';
+             grouped[primaryRes][badge].daily[dateStr].leaveType = l.type || 'Leave';
+             grouped[primaryRes][badge].daily[dateStr].reason = l.reason || '';
           }
         }
       });
@@ -568,12 +570,12 @@ function TimesheetHistoryContent() {
 
     // Populate Exceptions
     exceptions.forEach(ex => {
-      if (!ex.badgeId || !ex.startDate || !ex.endDate) return;
-      const badge = ex.badgeId;
+      const badge = ex.badgeId || ex.employeeId;
+      if (!badge || !ex.startDate || !ex.endDate) return;
 
       if (deferredSearchTerm) {
         const searchLower = deferredSearchTerm.toLowerCase();
-        if (!(ex.name?.toLowerCase().includes(searchLower) || ex.nameAr?.toLowerCase().includes(searchLower) || badge.toLowerCase().includes(searchLower))) return;
+        if (!(ex.name?.toLowerCase().includes(searchLower) || ex.nameAr?.toLowerCase().includes(searchLower) || String(badge).toLowerCase().includes(searchLower))) return;
       }
 
       const primaryRes = empRawGroup[badge]?.primaryRes || employeesMap[badge]?.projectName || employeesMap[badge]?.project || 'Unassigned / Outside';
@@ -1028,7 +1030,7 @@ function TimesheetHistoryContent() {
 
     const isAbsent = record.status === 'Absent';
     const isPresent = record.status === 'Present';
-    const isLeave = record.status === 'Leave';
+    const isLeave = record.status === 'Leave' || record.status === 'On Leave' || record.status === 'Sick Leave' || record.status === 'Permission';
     const isException = record.status === 'Exception';
     const isElsewhere = record.status === 'Elsewhere';
     const isFuture = record.status === 'Future';
@@ -1056,8 +1058,14 @@ function TimesheetHistoryContent() {
       content = 'T';
       tooltip = `Transferred`;
     } else if (isLeave) {
-      content = 'L'; // Indicates Leave
-      tooltip = `Leave: ${record.leaveType || 'Approved'} \nNotes: ${record.reason || '-'}`;
+      if (record.leaveType === 'Sick' || record.leaveType === 'مرضية' || record.status === 'Sick Leave') {
+        content = 'S';
+      } else if (record.leaveType === 'Permission' || record.leaveType === 'استئذان' || record.status === 'Permission') {
+        content = 'P';
+      } else {
+        content = 'L';
+      }
+      tooltip = `Leave: ${record.leaveType || record.status || 'Approved'} \nNotes: ${record.reason || '-'}`;
     } else if (isException) {
       content = 'Ex'; // Indicates Exception
       tooltip = `Exception: ${record.exceptionType || 'Approved'}${record.exceptionHours ? ` (${record.exceptionHours} hrs)` : ''} \nNotes: ${record.reason || '-'}`;

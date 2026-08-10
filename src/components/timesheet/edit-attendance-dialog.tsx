@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DailyAttendance } from "@/types/timesheet";
 import { useTimesheet } from "@/context/timesheet-context";
+import { useHousingEmployees } from "@/context/housing-employees-context";
 import { calculateAttendanceStats } from "@/utils/timesheet-utils";
 
 interface EditAttendanceDialogProps {
@@ -24,7 +25,8 @@ interface EditAttendanceDialogProps {
 }
 
 export function EditAttendanceDialog({ record, open, onOpenChange }: EditAttendanceDialogProps) {
-  const { updateAttendanceRecord } = useTimesheet();
+  const { updateAttendanceRecord, timesheetEvents, employeeSchedules } = useTimesheet();
+  const { employees } = useHousingEmployees();
   const [checkIn, setCheckIn] = useState(record.checkIn || "");
   const [checkOut, setCheckOut] = useState(record.checkOut || "");
 
@@ -42,7 +44,17 @@ export function EditAttendanceDialog({ record, open, onOpenChange }: EditAttenda
     const outTime = checkOut.trim() || null;
 
     // 2. Re-calculate metrics based on new inputs
-    const stats = calculateAttendanceStats(inTime, outTime, record.date, record.employeeId);
+    const stats = calculateAttendanceStats(
+      inTime,
+      outTime,
+      record.date,
+      record.employeeId,
+      timesheetEvents,
+      employeeSchedules,
+      [], // leaves
+      [], // transfers
+      employees
+    );
 
     // 3. Update the global context
     updateAttendanceRecord(record.id, {

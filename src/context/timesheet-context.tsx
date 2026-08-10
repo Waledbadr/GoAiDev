@@ -44,7 +44,7 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
   const [employeeSchedules, setEmployeeSchedules] = useState<EmployeeSchedule[]>([]);
   // Kept only for the current import so a merged day is recalculated with the
   // same leave/transfer rules used when it was first previewed.
-  const [importContext, setImportContext] = useState<{ leaves: any[]; transfers: any[] }>({ leaves: [], transfers: [] });
+  const [importContext, setImportContext] = useState<{ leaves: any[]; transfers: any[]; employees: any[] }>({ leaves: [], transfers: [], employees: [] });
   const [isFetching, setIsFetching] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -184,7 +184,7 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
         employeesData,
         transfersData // Pass transfers
       );
-      setImportContext({ leaves: leavesData, transfers: transfersData });
+      setImportContext({ leaves: leavesData, transfers: transfersData, employees: employeesData });
       setProcessedAttendance(processed);
       setIsProcessing(false);
       
@@ -266,7 +266,8 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
               timesheetEvents,
               employeeSchedules,
               importContext.leaves,
-              importContext.transfers
+              importContext.transfers,
+              importContext.employees
             );
             updated++;
           }
@@ -293,7 +294,7 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       // Clear in-memory data to signal that the save was successful
       setRawPunches([]);
       setProcessedAttendance([]);
-      setImportContext({ leaves: [], transfers: [] });
+      setImportContext({ leaves: [], transfers: [], employees: [] });
       
       toast({
         title: isAr ? "تم الحفظ بنجاح" : "Save Successful",
