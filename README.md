@@ -131,7 +131,7 @@ EstateCare/
 1. **استنساخ المشروع**
    ```powershell
    git clone [repository-url]
-   cd studio
+   cd GoAiDev
    ```
 
 2. **تثبيت التبعيات**
