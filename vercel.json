@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/timesheet-sync",
-      "schedule": "0 7,15 * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
