@@ -50,18 +50,6 @@ export const calculateAttendanceStats = (
     }
   }
 
-  let totalHoursNum = 0;
-  if (checkIn && checkOut && checkIn !== checkOut) {
-    const inMins = timeToMinutes(checkIn);
-    let outMins = timeToMinutes(checkOut);
-
-    if (outMins < inMins) outMins += 24 * 60; // Crossed midnight
-
-    const totalMins = outMins - inMins;
-    const roundedMins = Math.round(totalMins / 15) * 15;
-    totalHoursNum = Number((roundedMins / 60).toFixed(2));
-  }
-
   const dateObj = new Date(date);
   const isThursday = dateObj.getDay() === 4;
   const isFriday = dateObj.getDay() === 5; // Weekend
@@ -93,6 +81,28 @@ export const calculateAttendanceStats = (
   const activeEvent = events.find(e => date >= e.startDate && date <= e.endDate);
   if (activeEvent && activeEvent.type === 'reduced_hours') {
       requiredHours = activeEvent.requiredHours || 6.0;
+  }
+
+  let totalHoursNum = 0;
+  if (checkIn && checkOut && checkIn !== checkOut) {
+    let inMins = timeToMinutes(checkIn);
+    let outMins = timeToMinutes(checkOut);
+
+    // Apply 15-minute grace period for employees with 8.5 base hours
+    if (baseHours === 8.5) {
+      const shiftStartMins = timeToMinutes("08:30");
+      const gracePeriodEnd = shiftStartMins + 15; // 08:45
+      
+      if (inMins > shiftStartMins && inMins <= gracePeriodEnd) {
+        inMins = shiftStartMins;
+      }
+    }
+
+    if (outMins < inMins) outMins += 24 * 60; // Crossed midnight
+
+    const totalMins = outMins - inMins;
+    const roundedMins = Math.round(totalMins / 15) * 15;
+    totalHoursNum = Number((roundedMins / 60).toFixed(2));
   }
 
   let regularHours = 0;

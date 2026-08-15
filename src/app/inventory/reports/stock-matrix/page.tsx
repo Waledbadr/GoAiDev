@@ -24,6 +24,7 @@ export default function StockMatrixReportPage() {
   const { toast } = useToast();
 
   const [hideEmptyItems, setHideEmptyItems] = useState(true);
+  const [hideEmptyResidences, setHideEmptyResidences] = useState(false);
   const [search, setSearch] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsItem, setDetailsItem] = useState<any | null>(null);
@@ -54,7 +55,7 @@ export default function StockMatrixReportPage() {
   }, [residences, currentUser]);
 
   // Build categories and items matrix view
-  const { grouped, residenceTotals, grandTotal, totalItemsShown } = useMemo(() => {
+  const { grouped, residenceTotals, grandTotal, totalItemsShown, displayResidences } = useMemo(() => {
     const collator = new Intl.Collator(["ar", "en"], { sensitivity: "base", numeric: true });
   const normalizedSearch = search.trim();
     const group: Record<string, any[]> = {};
@@ -150,13 +151,18 @@ export default function StockMatrixReportPage() {
       }
     }  
 
+    const dispRes = hideEmptyResidences 
+      ? visibleResidences.filter(r => (resTotals.get(r.id) || 0) > 0)
+      : visibleResidences;
+
     return {
       grouped: groupedEntries as [string, any[]][],
       residenceTotals: resTotals,
       grandTotal: grand,
       totalItemsShown: filteredItems.length,
+      displayResidences: dispRes,
     };
-  }, [items, visibleResidences, hideEmptyItems, search]);
+  }, [items, visibleResidences, hideEmptyItems, search, hideEmptyResidences, normalizedSynonyms]);
 
   useEffect(() => {
     // Ensure inventory and residences are loaded on first mount
@@ -259,7 +265,7 @@ export default function StockMatrixReportPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-amber-50 to-rose-50 dark:from-amber-900/10 dark:to-rose-900/10 rounded-lg p-6 border border-amber-100 dark:border-amber-900/40">
+      <div className="print:hidden bg-gradient-to-r from-amber-50 to-rose-50 dark:from-amber-900/10 dark:to-rose-900/10 rounded-lg p-6 border border-amber-100 dark:border-amber-900/40">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-extrabold tracking-wide text-foreground mb-2">
@@ -320,6 +326,15 @@ export default function StockMatrixReportPage() {
               />
               <span className="text-sm text-foreground">{dict.hideZeroStockItemsLabel}</span>
             </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="size-4"
+                checked={hideEmptyResidences}
+                onChange={(e) => setHideEmptyResidences(e.target.checked)}
+              />
+              <span className="text-sm text-foreground">{locale === 'ar' ? 'إخفاء السكن الفارغ' : 'Hide empty residences'}</span>
+            </label>
             <div className="ml-auto text-sm text-muted-foreground">
               {dict.itemsShownLabel ? (
                 <>
@@ -349,8 +364,8 @@ export default function StockMatrixReportPage() {
           <div className="h-px bg-gradient-to-r from-transparent via-amber-500 to-transparent mb-6" />
         </div>
 
-        <Card className="shadow-lg">
-          <CardHeader className="bg-muted/30 dark:bg-card border-b">
+        <Card className="shadow-lg print:border-none print:shadow-none">
+          <CardHeader className="bg-muted/30 dark:bg-card border-b print:hidden">
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl font-semibold text-foreground">
                 {dict.stockMatrixReportTitle}
@@ -358,12 +373,12 @@ export default function StockMatrixReportPage() {
               <div className="text-sm text-muted-foreground">{new Date().toLocaleString()}</div>
             </div>
           </CardHeader>
-          <CardContent className="p-0 overflow-x-auto">
+          <CardContent className="p-0 overflow-x-auto print:overflow-visible">
             <Table>
               <TableHeader className="sticky top-0 bg-muted/40 dark:bg-card z-10">
                 <TableRow>
                   <TableHead className="min-w-[220px]">{dict.categoryItemHeader}</TableHead>
-                  {visibleResidences.map((r) => (
+                  {displayResidences.map((r) => (
                     <TableHead key={r.id} className="text-center">
                       {r.name || r.id}
                     </TableHead>
@@ -374,7 +389,7 @@ export default function StockMatrixReportPage() {
               <TableBody>
                 {grouped.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={visibleResidences.length + 2} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={displayResidences.length + 2} className="text-center text-muted-foreground py-10">
                       {dict.noDataToDisplay}
                     </TableCell>
                   </TableRow>
@@ -383,12 +398,12 @@ export default function StockMatrixReportPage() {
                     return (
                       <Fragment key={`grp-${cat}`}>
                         <TableRow>
-                          <TableCell colSpan={visibleResidences.length + 2} className="bg-amber-50/60 dark:bg-amber-900/20 font-bold text-amber-900 dark:text-amber-200">
+                          <TableCell colSpan={displayResidences.length + 2} className="bg-amber-50/60 dark:bg-amber-900/20 font-bold text-amber-900 dark:text-amber-200">
                             {cat}
                           </TableCell>
                         </TableRow>
                         {(rows as any[]).map((it: any) => {
-                          const rowTotal = visibleResidences.reduce((sum, r) => sum + Math.max(0, Number(it.stockByResidence?.[r.id] || 0)), 0);
+                          const rowTotal = displayResidences.reduce((sum, r) => sum + Math.max(0, Number(it.stockByResidence?.[r.id] || 0)), 0);
                           return (
                             <TableRow key={it.id} className="hover:bg-muted/40">
                               <TableCell>
@@ -401,7 +416,7 @@ export default function StockMatrixReportPage() {
                                   {`${it?.nameEn || ""}${it?.nameEn && it?.nameAr ? " | " : ""}${it?.nameAr || ""}`}
                                 </button>
                               </TableCell>
-                              {visibleResidences.map((r) => (
+                              {displayResidences.map((r) => (
                                 <TableCell key={`${it.id}-${r.id}`} className="text-center tabular-nums">
                                   <button
                                     type="button"
@@ -426,7 +441,7 @@ export default function StockMatrixReportPage() {
                 {/* Totals row */}
                 <TableRow>
                   <TableCell className="text-right font-bold bg-muted/40">{dict.totalLabel}</TableCell>
-                  {visibleResidences.map((r) => (
+                  {displayResidences.map((r) => (
                     <TableCell key={`total-${r.id}`} className="text-center font-bold tabular-nums bg-muted/40 text-foreground dark:text-white">
                       {formatQty(residenceTotals.get(r.id) || 0)}
                     </TableCell>
@@ -444,23 +459,58 @@ export default function StockMatrixReportPage() {
       {/* Elegant print styles */}
       <style jsx global>{`
         @page {
-          size: auto;
-          margin: 0;
+          size: A4 landscape;
+          margin: 10mm;
         }
         @media print {
-          :root { color-scheme: light; }
-          body { background: white !important; margin: 0 !important; padding: 0 !important; }
+          :root { color-scheme: light !important; }
+          body, html { 
+            background: white !important; 
+            color: black !important;
+            margin: 0 !important; 
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           .print\\:hidden { display: none !important; }
-          /* Hide app chrome in print */
           header, nav, aside, footer { display: none !important; }
-          /* Remove sticky behavior that can shift content in print */
           .sticky { position: static !important; }
           .shadow-lg, .shadow { box-shadow: none !important; }
-          .border { border-color: #d4af37 !important; }
-          table { page-break-inside: auto; }
+          
+          /* Override dark mode text */
+          .text-foreground, .dark\\:text-white, .text-muted-foreground, button { 
+            color: black !important; 
+          }
+          
+          /* Table formatting */
+          table { 
+            page-break-inside: auto; 
+            width: 100% !important; 
+            border-collapse: collapse !important;
+            margin-top: 10px !important;
+          }
+          th, td { 
+            padding: 6px 4px !important; 
+            font-size: 9pt !important;
+            border: 1px solid #94a3b8 !important; /* Slate-400 for visible borders */
+          }
+          th {
+            background-color: #f1f5f9 !important; /* Slate-100 */
+            font-weight: bold !important;
+            color: #0f172a !important;
+          }
+          
+          /* Category header row */
+          td[colspan] {
+            background-color: #fef3c7 !important; /* Amber-100 */
+            color: #92400e !important; /* Amber-800 */
+            font-weight: bold !important;
+            font-size: 10pt !important;
+            text-align: center !important;
+          }
+          
           tr { page-break-inside: avoid; page-break-after: auto; }
           thead { display: table-header-group; }
-          tfoot { display: table-footer-group; }
         }
         .tabular-nums { font-variant-numeric: tabular-nums; }
       `}</style>
@@ -482,7 +532,7 @@ export default function StockMatrixReportPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleResidences.map((r) => {
+                {displayResidences.map((r) => {
                   const q = Number(detailsItem?.stockByResidence?.[r.id] || 0);
                   return (
                     <TableRow key={`det-${r.id}`}>
@@ -495,7 +545,7 @@ export default function StockMatrixReportPage() {
                   <TableCell className="font-semibold">{dict.totalLabel}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
                     {formatQty(
-                      visibleResidences.reduce((sum, r) => sum + Number(detailsItem?.stockByResidence?.[r.id] || 0), 0)
+                      displayResidences.reduce((sum, r) => sum + Number(detailsItem?.stockByResidence?.[r.id] || 0), 0)
                     )}
                   </TableCell>
                 </TableRow>

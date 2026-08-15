@@ -12,7 +12,6 @@ import {
   MonthlyFinancial,
   calcTotalIncome,
   calcTotalExpenses,
-  formatSAR,
 } from '@/types/financials';
 import { getFiscalMonthForDate } from '@/lib/fiscal-month-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +29,8 @@ import {
   CalendarDays,
   Building2,
   Printer,
+  FileDown,
+  Loader2,
   TrendingDown,
   TrendingUp,
   DollarSign,
@@ -109,7 +110,68 @@ function IncomeExpensesReportContent() {
   const toggleGroup = (key: string) =>
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const printPage = () => window.print();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const printPage = () => {
+    window.print();
+  };
+
+  const downloadPdf = async () => {
+    const reportEl = document.getElementById('report-main-content');
+    if (!reportEl) return;
+    setIsExportingPdf(true);
+    try {
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default || html2canvasModule;
+      const jsPDFModule = await import('jspdf');
+      const jsPDF = jsPDFModule.jsPDF || jsPDFModule.default;
+
+      const canvas = await html2canvas(reportEl, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        ignoreElements: (el) => el.classList.contains('print:hidden'),
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const margin = 5;
+      const imgWidth = pdfWidth - margin * 2;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight - margin * 2;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight - margin * 2;
+      }
+
+      const resName = currentResidence?.name ? currentResidence.name.replace(/\s+/g, '_') : residenceId;
+      pdf.save(`Income_Expenses_Report_${fiscalMonth}_${resName}.pdf`);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      window.print();
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   if (!fiscalMonth || !residenceId) {
     return (
@@ -120,30 +182,44 @@ function IncomeExpensesReportContent() {
     );
   }
 
-  return (
-    <div className="p-6 space-y-6">
+  const reportContent = (
+    <div id="report-main-content" className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
             {isAr ? 'تقرير الدخل والمصروفات الشهري' : 'Monthly Income & Expenses Report'}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isAr ? 'تفصيل الدخل والمصروفات لكل سكن للشهر المختار' : 'Breakdown of income/expenses per residence for selected month'}
+            {isAr
+              ? 'تفصيل الدخل والمصروفات لكل سكن للشهر المختار'
+              : 'Breakdown of income/expenses per residence for selected month'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 print:hidden">
           <Button
             onClick={printPage}
             variant="outline"
-            className="gap-2 border-amber-300"
+            className="gap-2 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
           >
             <Printer className="w-4 h-4" />
-            {isAr ? 'طباعة' : 'Print'}
+            {isAr ? 'طباعة A4' : 'Print A4'}
+          </Button>
+          <Button
+            onClick={downloadPdf}
+            disabled={isExportingPdf}
+            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            {isAr ? 'حفظ PDF' : 'Save PDF'}
           </Button>
         </div>
       </div>
 
-      <Card>
+      <Card className="print:hidden">
         <CardContent className="pt-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex flex-col gap-1.5">
@@ -187,6 +263,11 @@ function IncomeExpensesReportContent() {
         </CardContent>
       </Card>
 
+      <div className="hidden print:block text-sm text-gray-600 border-b pb-3">
+        <p><strong>{isAr ? 'السكن:' : 'Residence:'}</strong> {currentResidence?.name ?? residenceId}</p>
+        <p><strong>{isAr ? 'الشهر المالي:' : 'Fiscal Month:'}</strong> {new Date(fiscalMonth + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}</p>
+      </div>
+
       {loading || !draft ? (
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
@@ -198,8 +279,8 @@ function IncomeExpensesReportContent() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="border-emerald-200 dark:border-emerald-900">
+          <div className="grid gap-4 grid-cols-3">
+            <Card className="border-emerald-200 dark:border-emerald-900 print:shadow-none break-inside-avoid">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
                   {isAr ? 'إجمالي الدخل' : 'Total Income'}
@@ -213,7 +294,7 @@ function IncomeExpensesReportContent() {
               </CardContent>
             </Card>
 
-            <Card className="border-rose-200 dark:border-rose-900">
+            <Card className="border-rose-200 dark:border-rose-900 print:shadow-none break-inside-avoid">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-rose-700 dark:text-rose-400">
                   {isAr ? 'إجمالي المصروفات' : 'Total Expenses'}
@@ -229,9 +310,10 @@ function IncomeExpensesReportContent() {
 
             <Card
               className={
-                netIncome >= 0
+                (netIncome >= 0
                   ? 'border-blue-200 dark:border-blue-900'
-                  : 'border-amber-200 dark:border-amber-900'
+                  : 'border-amber-200 dark:border-amber-900') +
+                ' print:shadow-none break-inside-avoid'
               }
             >
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -245,9 +327,7 @@ function IncomeExpensesReportContent() {
                   {isAr ? 'صافي الدخل' : 'Net Income'}
                 </CardTitle>
                 <DollarSign
-                  className={`w-4 h-4 ${
-                    netIncome >= 0 ? 'text-blue-500' : 'text-amber-500'
-                  }`}
+                  className={`w-4 h-4 ${netIncome >= 0 ? 'text-blue-500' : 'text-amber-500'}`}
                 />
               </CardHeader>
               <CardContent>
@@ -267,9 +347,8 @@ function IncomeExpensesReportContent() {
             </Card>
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Income */}
-            <Card>
+          <div className="grid grid-cols-2 gap-6">
+            <Card className="print:shadow-none break-inside-avoid">
               <CardHeader className="bg-emerald-50/60 dark:bg-emerald-950/30 border-b py-3">
                 <CardTitle className="text-base flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
                   <TrendingUp className="w-4 h-4" />
@@ -283,16 +362,14 @@ function IncomeExpensesReportContent() {
                       <tr
                         key={cat.key}
                         className={`border-b last:border-0 ${
-                          i % 2 === 0
-                            ? 'bg-white dark:bg-gray-950'
-                            : 'bg-gray-50/50 dark:bg-gray-900/30'
+                          i % 2 === 0 ? 'bg-white dark:bg-gray-950' : 'bg-gray-50/50 dark:bg-gray-900/30'
                         }`}
                       >
                         <td className="px-4 py-2 text-gray-700 dark:text-gray-300 w-3/5">
                           {isAr ? cat.labelAr : cat.labelEn}
                         </td>
                         <td className="px-3 py-1.5 w-2/5 text-right tabular-nums">
-                          {formatMoney(draft.income[cat.key as IncomeKey])}{' '}
+                          {formatMoney(draft.income[cat.key as IncomeKey])}
                         </td>
                       </tr>
                     ))}
@@ -309,8 +386,7 @@ function IncomeExpensesReportContent() {
               </CardContent>
             </Card>
 
-            {/* Expenses */}
-            <Card>
+            <Card className="print:shadow-none break-inside-avoid">
               <CardHeader className="bg-rose-50/60 dark:bg-rose-950/30 border-b py-3">
                 <CardTitle className="text-base flex items-center gap-2 text-rose-700 dark:text-rose-400">
                   <TrendingDown className="w-4 h-4" />
@@ -371,25 +447,12 @@ function IncomeExpensesReportContent() {
               </CardContent>
             </Card>
           </div>
-
-          <style jsx global>{`
-            @media print {
-              /* Hide app chrome in print */
-              header,
-              nav,
-              aside,
-              footer {
-                display: none !important;
-              }
-              .print\\:hidden {
-                display: none !important;
-              }
-            }
-          `}</style>
         </>
       )}
     </div>
   );
+
+  return reportContent;
 }
 
 export default function IncomeExpensesReportPage() {
@@ -399,4 +462,3 @@ export default function IncomeExpensesReportPage() {
     </FinancialsProvider>
   );
 }
-

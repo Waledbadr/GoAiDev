@@ -144,12 +144,27 @@ body {
   aside,
   nav,
   header,
-  [data-sidebar],
+  [data-sidebar="sidebar"],
   .sidebar-trigger {
     display: none !important;
   }
 
-  /* Make the certificate take full width */
+  /* Force layout wrappers to expand naturally in print */
+  html,
+  body,
+  #__next,
+  .group\/sidebar-wrapper,
+  [data-sidebar="inset"],
+  main {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+  }
+
+  /* Make the main content take full width */
   main {
     width: 100% !important;
     max-width: 100% !important;
@@ -159,8 +174,8 @@ body {
 
   /* Page setup */
   @page {
-    size: A4;
-    margin: 1.5cm;
+    size: A4 portrait;
+    margin: 0.5cm;
   }
 
   /* Force colors in print */

@@ -253,13 +253,10 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
           <Tooltip>
             <TooltipTrigger asChild>
               <Link
-                href="/"
+                href="/Materials"
                 className={cn(
                   "inline-flex h-9 w-9 items-center justify-center rounded-md border text-sm font-medium hover:bg-muted transition-colors shrink-0",
-                  !pathname?.startsWith('/accommodation') &&
-                  !pathname?.startsWith('/timesheet') &&
-                  !pathname?.startsWith('/income-expenses') &&
-                  !pathname?.startsWith('/contracts') &&
+                  pathname?.startsWith('/Materials') &&
                   "bg-muted text-primary"
                 )}
                 title={dict.ui.materialsApp || 'Materials'}

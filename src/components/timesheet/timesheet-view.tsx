@@ -260,51 +260,61 @@ export function TimesheetView() {
             {isAr ? "اختر نطاق التاريخ لاستيراد البصمات مباشرة من قاعدة البيانات الرئيسية" : "Select date range to import punches directly from the main database"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="pt-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground mr-1">{isAr ? "اختيارات سريعة:" : "Quick Select:"}</span>
-            <Button variant="outline" size="sm" className="h-7 text-xs rounded-full" onClick={setRangeToday}>{isAr ? "اليوم" : "Today"}</Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs rounded-full" onClick={setRangeYesterday}>{isAr ? "أمس" : "Yesterday"}</Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs rounded-full bg-blue-50 dark:bg-blue-950/30" onClick={setRangeThisMonth}>{isAr ? "هذا الشهر" : "This Month"}</Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs rounded-full" onClick={setRangeLastMonth}>{isAr ? "الشهر السابق" : "Last Month"}</Button>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-2 pb-2">
-            <span className="text-xs font-medium text-muted-foreground mr-1">{isAr ? "الشهور المالية 2026:" : "2026 Fiscal Months:"}</span>
-            {[
-              { name: isAr ? "يناير" : "Jan", value: "2026-01" },
-              { name: isAr ? "فبراير" : "Feb", value: "2026-02" },
-              { name: isAr ? "مارس" : "Mar", value: "2026-03" },
-              { name: isAr ? "أبريل" : "Apr", value: "2026-04" },
-              { name: isAr ? "مايو" : "May", value: "2026-05" },
-            ].map(m => (
-              <Button 
-                key={m.value}
-                variant="ghost" 
-                size="sm" 
-                className="h-7 text-xs px-3 border border-dashed hover:border-solid rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
-                onClick={() => setRangeByMonth(m.value)}
-              >
-                {m.name}
-              </Button>
-            ))}
+        <CardContent className="pt-6 space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Quick Filters */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-foreground">{isAr ? "نطاقات زمنية سريعة" : "Quick Ranges"}</h3>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeToday}>{isAr ? "اليوم" : "Today"}</Button>
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeYesterday}>{isAr ? "أمس" : "Yesterday"}</Button>
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 font-semibold" onClick={setRangeThisMonth}>{isAr ? "هذا الشهر" : "This Month"}</Button>
+                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeLastMonth}>{isAr ? "الشهر السابق" : "Last Month"}</Button>
+              </div>
+            </div>
+            
+            {/* Fiscal Months */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-foreground">{isAr ? "الشهور المالية" : "Fiscal Months"}</h3>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { name: isAr ? "يناير" : "Jan", value: "2026-01" },
+                  { name: isAr ? "فبراير" : "Feb", value: "2026-02" },
+                  { name: isAr ? "مارس" : "Mar", value: "2026-03" },
+                  { name: isAr ? "أبريل" : "Apr", value: "2026-04" },
+                  { name: isAr ? "مايو" : "May", value: "2026-05" },
+                ].map(m => (
+                  <Button 
+                    key={m.value}
+                    variant="outline" 
+                    size="sm" 
+                    className="h-8 text-xs rounded-md border-dashed border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
+                    onClick={() => setRangeByMonth(m.value)}
+                  >
+                    {m.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4 items-end pt-2 border-t border-dashed">
-            <div className="grid w-full max-w-sm items-center gap-1.5">
-              <label htmlFor="start-date" className="text-sm font-medium">{isAr ? "من تاريخ" : "Start Date"}</label>
+          <div className="p-4 bg-muted/40 rounded-xl border border-border/50 flex flex-col md:flex-row gap-4 items-end shadow-sm">
+            <div className="grid flex-1 w-full items-center gap-2">
+              <label htmlFor="start-date" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{isAr ? "من تاريخ" : "Start Date"}</label>
               <Input
                 id="start-date"
                 type="date"
+                className="bg-background shadow-sm h-10"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
-            <div className="grid w-full max-w-sm items-center gap-1.5">
-              <label htmlFor="end-date" className="text-sm font-medium">{isAr ? "إلى تاريخ" : "End Date"}</label>
+            <div className="grid flex-1 w-full items-center gap-2">
+              <label htmlFor="end-date" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{isAr ? "إلى تاريخ" : "End Date"}</label>
               <Input
                 id="end-date"
                 type="date"
+                className="bg-background shadow-sm h-10"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -312,7 +322,7 @@ export function TimesheetView() {
             <Button 
               onClick={handleFetch} 
               disabled={isFetching || isProcessing || isSaving || !startDate || !endDate}
-              className="w-full md:w-auto"
+              className="w-full md:w-auto h-10 px-8 shadow-sm"
             >
               {isFetching || isProcessing ? (
                 <>
@@ -331,16 +341,16 @@ export function TimesheetView() {
           </div>
           {(isFetching || isProcessing || isSaving) && (
             <div
-              className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary"
+              className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary animate-in fade-in slide-in-from-top-1"
               role="status"
               aria-live="polite"
             >
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin" />
               {isSaving
                 ? (isAr ? "يتم حفظ ودمج البيانات في قاعدة البيانات. يمكنك الانتظار هنا." : "Saving and merging records in the database. Please wait.")
                 : isFetching
-                  ? (isAr ? "يتم الاتصال بخادم البصمة وجلب البيانات." : "Connecting to the biometric server and fetching data.")
-                  : (isAr ? "يتم تحويل البصمات إلى سجلات حضور يومية." : "Converting punches into daily attendance records.")}
+                  ? (isAr ? "يتم الاتصال بخادم البصمة وجلب البيانات بصورة آمنة." : "Connecting to the biometric server and fetching data securely.")
+                  : (isAr ? "يتم معالجة البصمات وتحويلها إلى سجلات حضور يومية دقيقة." : "Processing punches and converting them into accurate daily attendance records.")}
             </div>
           )}
         </CardContent>
