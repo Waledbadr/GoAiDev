@@ -459,6 +459,9 @@ function TimesheetHistoryContent() {
       empRawGroup[empId].primaryRes = topProj || 'Unassigned / Outside';
     });
 
+    // Get today formatted as YYYY-MM-DD in local time to prevent processing future days
+    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
     // Stage 2: Create the final grouped structure
     const grouped: Record<string, Record<string, any>> = {};
     const employeeDailyProjects: Record<string, Record<string, string[]>> = {};
@@ -503,7 +506,21 @@ function TimesheetHistoryContent() {
 
         data.allRecords.forEach(record => {
           const dateStr = record.date;
-          const recProj = record.projectName || 'Unassigned / Outside';
+          const isFutureDate = dateStr > todayStr;
+          const hasActualPunches = !!((record.punches && record.punches.length > 0) || (record.checkIn && record.checkOut));
+
+          let sanitizedRecord = record;
+          if (isFutureDate && !hasActualPunches) {
+            sanitizedRecord = {
+              ...record,
+              status: 'Future',
+              regularHours: 0,
+              overtimeHours: 0,
+              totalHours: 0
+            };
+          }
+
+          const recProj = sanitizedRecord.projectName || 'Unassigned / Outside';
           const isElsewhereRec = recProj !== proj;
           const prevRecord = grouped[proj][empKey].daily[dateStr];
 
@@ -523,11 +540,11 @@ function TimesheetHistoryContent() {
              }
           } else {
              if (prevRecord && prevRecord.status !== 'Elsewhere') {
-                 if ((record.totalHours || 0) > (prevRecord.totalHours || 0)) {
-                     grouped[proj][empKey].daily[dateStr] = { ...record };
+                 if ((sanitizedRecord.totalHours || 0) > (prevRecord.totalHours || 0)) {
+                     grouped[proj][empKey].daily[dateStr] = { ...sanitizedRecord };
                  }
              } else {
-                 grouped[proj][empKey].daily[dateStr] = { ...record };
+                 grouped[proj][empKey].daily[dateStr] = { ...sanitizedRecord };
              }
           }
 
@@ -681,9 +698,6 @@ function TimesheetHistoryContent() {
         }
       }
     });
-
-    // Get today formatted as YYYY-MM-DD in local time to prevent processing future Fridays
-    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
     // Post-Process: Friday Weekly Rest (بدل الراحة الاسبوعية) and Totals
     Object.keys(grouped).forEach(proj => {
@@ -928,7 +942,7 @@ function TimesheetHistoryContent() {
 
         // 2. Accumulate Totals across all processed days
         Object.values(empData.daily).forEach((record: any) => {
-          if (record.isTransfer) return; // Don't count transferred days
+          if (record.isTransfer || record.status === 'Future' || record.status === 'Elsewhere') return; // Don't count transferred, future or elsewhere days
           empData.totalRH += (record.regularHours !== undefined ? record.regularHours : (record.totalHours || 0));
           empData.totalOT += (record.overtimeHours || 0);
           

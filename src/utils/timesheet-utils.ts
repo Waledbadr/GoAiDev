@@ -114,6 +114,16 @@ export const calculateAttendanceStats = (
       status = date > todayStr ? 'Future' : 'Absent';
   }
 
+  // Future day with no punches should never have hours or Weekend/Holiday allowance in advance
+  if (status === 'Future') {
+    return {
+      totalHours: 0,
+      regularHours: 0,
+      overtimeHours: 0,
+      status: 'Future'
+    };
+  }
+
   // Incomplete punch (only one punch) → grant 1 RH as placeholder
   if (status === 'Incomplete') {
       regularHours = 1;
