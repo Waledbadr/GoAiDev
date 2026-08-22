@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useUsers } from '@/context/users-context';
 import { useToast } from '@/hooks/use-toast';
 import { Camera, LifeBuoy, Send } from 'lucide-react';
@@ -14,6 +15,7 @@ import { useErrorCapture } from '@/hooks/use-error-capture';
 import { db } from '@/lib/firebase';
 import { addDoc, collection, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { gitInfo } from '@/lib/git-info';
+import { cn } from '@/lib/utils';
 
 interface Props {
   className?: string;
@@ -221,11 +223,21 @@ export default function FeedbackWidget({ className }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" className={className} variant="secondary">
-          <LifeBuoy className="h-4 w-4 mr-2" /> Feedback
-        </Button>
-      </DialogTrigger>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button size="icon" variant="ghost" className={cn('h-9 w-9', className)}>
+                <LifeBuoy className="h-5 w-5" />
+                <span className="sr-only">Feedback</span>
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Feedback</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <DialogContent className="sm:max-w-lg" data-feedback-dialog>
         <DialogHeader>
           <DialogTitle>Send Feedback</DialogTitle>

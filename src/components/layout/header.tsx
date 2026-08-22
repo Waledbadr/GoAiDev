@@ -246,7 +246,11 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
 
   return (
     <header className={headerClass} {...props}>
-      <SidebarTrigger className="h-10 w-10 shrink-0" />
+      {/* Desktop keeps its toggle inside the sidebar header, next to the
+          brand. Here it would be a second control for the same thing, so it
+          only survives on mobile — where the sidebar is an off-canvas sheet
+          and its own toggle is unreachable while closed. */}
+      <SidebarTrigger className="h-10 w-10 shrink-0 md:hidden" />
       <div className="ms-1 sm:ms-3 flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar shrink min-w-0 max-w-[140px] xs:max-w-[200px] sm:max-w-none">
         <TooltipProvider>
           {/* Materials App */}

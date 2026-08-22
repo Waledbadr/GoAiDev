@@ -4,7 +4,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { VariantProps, cva } from "class-variance-authority"
-import { PanelLeft } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -24,7 +24,7 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
-const SIDEBAR_WIDTH_ICON = "3rem"
+const SIDEBAR_WIDTH_ICON = "3.5rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContext = {
@@ -38,6 +38,14 @@ type SidebarContext = {
 }
 
 const SidebarContext = React.createContext<SidebarContext | null>(null)
+
+/**
+ * Which edge the sidebar is docked to. Provided by `Sidebar` rather than by
+ * `SidebarProvider` because `side` is a prop of the former — collapsed-state
+ * tooltips need it so they open away from the rail instead of on top of it,
+ * which matters in RTL where the sidebar sits on the right.
+ */
+const SidebarSideContext = React.createContext<"left" | "right">("left")
 
 function useSidebar() {
   const context = React.useContext(SidebarContext)
@@ -96,6 +104,19 @@ const SidebarProvider = React.forwardRef<
         ? setOpenMobile((open) => !open)
         : setOpen((open) => !open)
     }, [isMobile, setOpen, setOpenMobile])
+
+    // `setOpen` writes the cookie but nothing ever read it back, so a collapsed
+    // rail sprang open again on every reload. Restore it after mount rather
+    // than during render: the server has no cookie to render from, and seeding
+    // initial state from `document` would be a hydration mismatch.
+    React.useEffect(() => {
+      if (openProp !== undefined) return
+      const match = document.cookie.match(
+        new RegExp(`(?:^|; )${SIDEBAR_COOKIE_NAME}=([^;]*)`)
+      )
+      if (!match) return
+      _setOpen(match[1] === "true")
+    }, [openProp])
 
     // Adds a keyboard shortcut to toggle the sidebar.
     React.useEffect(() => {
@@ -180,16 +201,18 @@ const Sidebar = React.forwardRef<
 
     if (collapsible === "none") {
       return (
-        <div
-          className={cn(
-            "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
-            className
-          )}
-          ref={ref}
-          {...props}
-        >
-          {children}
-        </div>
+        <SidebarSideContext.Provider value={side}>
+          <div
+            className={cn(
+              "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+              className
+            )}
+            ref={ref}
+            {...props}
+          >
+            {children}
+          </div>
+        </SidebarSideContext.Provider>
       )
     }
 
@@ -208,13 +231,16 @@ const Sidebar = React.forwardRef<
             side={side}
           >
             <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-            <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-contain">{children}</div>
+            <SidebarSideContext.Provider value={side}>
+              <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-contain">{children}</div>
+            </SidebarSideContext.Provider>
           </SheetContent>
         </Sheet>
       )
     }
 
     return (
+      <SidebarSideContext.Provider value={side}>
       <div
         ref={ref}
         className="group peer hidden md:block text-sidebar-foreground"
@@ -261,6 +287,7 @@ const Sidebar = React.forwardRef<
           </div>
         </div>
       </div>
+      </SidebarSideContext.Provider>
     )
   }
 )
@@ -270,7 +297,14 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state, isMobile, openMobile } = useSidebar()
+  const side = React.useContext(SidebarSideContext)
+
+  // The icon has to say which way the panel will move, so it flips with both
+  // the current state and the docked edge (RTL puts the sidebar on the right).
+  const isOpen = isMobile ? openMobile : state === "expanded"
+  const Icon = isOpen ? PanelLeftClose : PanelLeftOpen
+  const label = isOpen ? "Collapse sidebar" : "Expand sidebar"
 
   return (
     <Button
@@ -278,6 +312,9 @@ const SidebarTrigger = React.forwardRef<
       data-sidebar="trigger"
       variant="ghost"
       size="icon"
+      aria-label={label}
+      aria-expanded={isOpen}
+      title={label}
       className={cn("h-7 w-7", className)}
       onClick={(event) => {
         onClick?.(event)
@@ -285,8 +322,8 @@ const SidebarTrigger = React.forwardRef<
       }}
       {...props}
     >
-      <PanelLeft />
-      <span className="sr-only">Toggle Sidebar</span>
+      <Icon className={cn(side === "right" && "-scale-x-100")} />
+      <span className="sr-only">{label}</span>
     </Button>
   )
 })
@@ -499,7 +536,13 @@ const SidebarMenu = React.forwardRef<
   <ul
     ref={ref}
     data-sidebar="menu"
-    className={cn("flex w-full min-w-0 flex-col gap-1", className)}
+    className={cn(
+      "flex w-full min-w-0 flex-col gap-1",
+      // Rail view: buttons shrink to a 2rem square, so centre them on the rail
+      // instead of leaving them pinned to the leading edge.
+      "group-data-[collapsible=icon]:items-center",
+      className
+    )}
     {...props}
   />
 ))
@@ -562,6 +605,7 @@ const SidebarMenuButton = React.forwardRef<
   ) => {
     const Comp = asChild ? Slot : "button"
     const { isMobile, state } = useSidebar()
+    const sidebarSide = React.useContext(SidebarSideContext)
 
     const button = (
       <Comp
@@ -588,7 +632,7 @@ const SidebarMenuButton = React.forwardRef<
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
         <TooltipContent
-          side="right"
+          side={sidebarSide === "right" ? "left" : "right"}
           align="center"
           hidden={state !== "collapsed" || isMobile}
           {...tooltip}

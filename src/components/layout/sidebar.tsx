@@ -18,7 +18,79 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { useLanguage } from '@/context/language-context';
 import { useUsers } from '@/context/users-context';
 import { useState, useEffect } from 'react';
-import { useSidebar } from '@/components/ui/sidebar';
+import { useSidebar, SidebarTrigger } from '@/components/ui/sidebar';
+
+/**
+ * Sidebar brand plus the collapse control, shared by every section's header.
+ *
+ * Expanded, the two sit on one row with the toggle pushed to the trailing edge.
+ * In rail view the label drops out and the pair stacks, so the rail reads as
+ * logo-then-toggle rather than a clipped wordmark.
+ */
+function SidebarBrand({
+  icon,
+  label,
+  className,
+}: {
+  icon: React.ReactNode;
+  label: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 p-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:p-1">
+      {icon}
+      <span className={`text-xl font-semibold truncate group-data-[collapsible=icon]:hidden ${className || ''}`}>
+        {label}
+      </span>
+      <SidebarTrigger className="ms-auto h-8 w-8 shrink-0 group-data-[collapsible=icon]:ms-0" />
+    </div>
+  );
+}
+
+/**
+ * Footer identity block, shared by every section's footer.
+ *
+ * The card it sits in is dropped in rail view: a bordered box with its own
+ * padding around a 2rem avatar does not fit a 3.5rem rail, and the old markup
+ * overflowed it horizontally — `justify-center` was set on an element that was
+ * never `flex`, so it centred nothing.
+ */
+function SidebarUser({
+  currentUser,
+  loading,
+  withImage = false,
+}: {
+  currentUser: { name?: string; role?: string } | null | undefined;
+  loading: boolean;
+  withImage?: boolean;
+}) {
+  return (
+    <div className="p-2 group-data-[collapsible=icon]:p-1">
+      <div className="flex w-full items-center gap-2 rounded-md border p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:p-0">
+        <Avatar className="size-8 shrink-0">
+          {currentUser ? (
+            <>
+              {withImage && (
+                <AvatarImage
+                  src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23e5e7eb'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239ca3af' font-size='20'%3EIMG%3C/text%3E%3C/svg%3E"
+                  alt={currentUser.name}
+                  data-ai-hint="profile picture"
+                />
+              )}
+              <AvatarFallback>{currentUser.name?.charAt(0) || 'U'}</AvatarFallback>
+            </>
+          ) : (
+            <AvatarFallback />
+          )}
+        </Avatar>
+        <div className="min-w-0 text-start group-data-[collapsible=icon]:hidden">
+          <p className="truncate font-semibold text-sm">{loading ? 'Loading...' : currentUser?.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{loading ? '' : currentUser?.role}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -54,15 +126,12 @@ export function AppSidebar() {
     return (
       <>
         <SidebarHeader>
-          <div className="flex flex-col gap-1 p-2">
-            <div className="flex items-center gap-2">
-              <Clock className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-semibold text-blue-600 group-data-[collapsible=icon]:hidden">
-                  {'Timesheet'}
-              </span>
-            </div>
-          </div>
-          <div className="px-2 pb-2">
+          <SidebarBrand
+            icon={<Clock className="h-8 w-8 shrink-0 text-blue-600" />}
+            label={'Timesheet'}
+            className="text-blue-600"
+          />
+          <div className="px-2 pb-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
             <SidebarMenuButton asChild tooltip={'العودة للرئيسية'} className="bg-muted/50 border border-border mt-2 w-full justify-start">
               <Link href="/" onClick={handleNavigate}>
                 <Home className="h-4 w-4" />
@@ -76,7 +145,7 @@ export function AppSidebar() {
         <SidebarContent>
           <SidebarMenu>
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {dict.sidebar?.main || 'Main'}
               </div>
               <SidebarMenuItem>
@@ -93,7 +162,7 @@ export function AppSidebar() {
             </div>
             {/* Timesheet Management */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {'Management'}
               </div>
               <SidebarMenuItem>
@@ -161,7 +230,7 @@ export function AppSidebar() {
 
             {/* Timesheet Events & Exceptions */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {'Leaves Management'}
               </div>
               <SidebarMenuItem>
@@ -189,25 +258,7 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
-          <div className="p-2">
-            <div className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto p-2 border rounded-md">
-              <div className="flex items-center gap-2">
-                <Avatar className="size-8">
-                  {currentUser ? (
-                    <>
-                      <AvatarFallback>{currentUser.name?.charAt(0) || 'U'}</AvatarFallback>
-                    </>
-                  ) : (
-                    <AvatarFallback />
-                  )}
-                </Avatar>
-                <div className="group-data-[collapsible=icon]:hidden text-left">
-                  <p className="font-semibold text-sm">{loading ? 'Loading...' : currentUser?.name}</p>
-                  <p className="text-xs text-muted-foreground">{loading ? '' : currentUser?.role}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SidebarUser currentUser={currentUser} loading={loading} />
         </SidebarFooter>
       </>
     );
@@ -217,17 +268,16 @@ export function AppSidebar() {
     return (
       <>
         <SidebarHeader>
-          <div className="flex flex-col gap-1 p-2">
-            <div className="flex items-center gap-2">
-              <Wallet className="h-8 w-8 text-green-600" />
-              <span className="text-xl font-semibold text-green-600 group-data-[collapsible=icon]:hidden">{'الدخل والمصروفات'}</span>
-            </div>
-          </div>
+          <SidebarBrand
+            icon={<Wallet className="h-8 w-8 shrink-0 text-green-600" />}
+            label={'الدخل والمصروفات'}
+            className="text-green-600"
+          />
         </SidebarHeader>
         <SidebarContent>
           <SidebarMenu>
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 Main
               </div>
               <SidebarMenuItem>
@@ -266,25 +316,7 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
-          <div className="p-2">
-            <div className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto p-2 border rounded-md">
-              <div className="flex items-center gap-2">
-                <Avatar className="size-8">
-                  {currentUser ? (
-                    <>
-                      <AvatarFallback>{currentUser.name?.charAt(0) || 'U'}</AvatarFallback>
-                    </>
-                  ) : (
-                    <AvatarFallback />
-                  )}
-                </Avatar>
-                <div className="group-data-[collapsible=icon]:hidden text-left">
-                  <p className="font-semibold text-sm">{loading ? 'Loading...' : currentUser?.name}</p>
-                  <p className="text-xs text-muted-foreground">{loading ? '' : currentUser?.role}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SidebarUser currentUser={currentUser} loading={loading} />
         </SidebarFooter>
       </>
     );
@@ -298,15 +330,12 @@ export function AppSidebar() {
     return (
       <>
         <SidebarHeader>
-          <div className="flex flex-col gap-1 p-2">
-            <div className="flex items-center gap-2">
-              <FileCheck className="h-8 w-8 text-indigo-600" />
-              <span className="text-xl font-semibold text-indigo-600 group-data-[collapsible=icon]:hidden">
-                {cc.title || 'Contracts'}
-              </span>
-            </div>
-          </div>
-          <div className="px-2 pb-2">
+          <SidebarBrand
+            icon={<FileCheck className="h-8 w-8 shrink-0 text-indigo-600" />}
+            label={cc.title || 'Contracts'}
+            className="text-indigo-600"
+          />
+          <div className="px-2 pb-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
             <SidebarMenuButton asChild tooltip={isAr ? 'العودة للرئيسية' : 'Back to Main'} className="bg-muted/50 border border-border mt-2 w-full justify-start">
               <Link href="/" onClick={handleNavigate}>
                 <Home className="h-4 w-4" />
@@ -321,7 +350,7 @@ export function AppSidebar() {
           <SidebarMenu>
             {/* Main */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {(dict as any).sidebar?.main || 'Main'}
               </div>
               <SidebarMenuItem>
@@ -359,7 +388,7 @@ export function AppSidebar() {
 
             {/* Quick Filter */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {isAr ? 'فلترة سريعة' : 'Quick Filter'}
               </div>
               <SidebarMenuItem>
@@ -407,7 +436,7 @@ export function AppSidebar() {
 
             {/* Quick Actions */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {isAr ? 'إجراءات' : 'Actions'}
               </div>
               <SidebarMenuItem>
@@ -434,25 +463,7 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
-          <div className="p-2">
-            <div className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto p-2 border rounded-md">
-              <div className="flex items-center gap-2">
-                <Avatar className="size-8">
-                  {currentUser ? (
-                    <>
-                      <AvatarFallback>{currentUser.name?.charAt(0) || 'U'}</AvatarFallback>
-                    </>
-                  ) : (
-                    <AvatarFallback />
-                  )}
-                </Avatar>
-                <div className="group-data-[collapsible=icon]:hidden text-left">
-                  <p className="font-semibold text-sm">{loading ? 'Loading...' : currentUser?.name}</p>
-                  <p className="text-xs text-muted-foreground">{loading ? '' : currentUser?.role}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SidebarUser currentUser={currentUser} loading={loading} />
         </SidebarFooter>
       </>
     );
@@ -462,13 +473,12 @@ export function AppSidebar() {
     return (
       <>
         <SidebarHeader>
-          <div className="flex flex-col gap-1 p-2">
-            <div className="flex items-center gap-2">
-              <Building className="h-8 w-8 text-amber-600" />
-              <span className="text-xl font-semibold text-amber-600 group-data-[collapsible=icon]:hidden">Accommodation</span>
-            </div>
-          </div>
-          <div className="px-2 pb-2">
+          <SidebarBrand
+            icon={<Building className="h-8 w-8 shrink-0 text-amber-600" />}
+            label="Accommodation"
+            className="text-amber-600"
+          />
+          <div className="px-2 pb-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
             <SidebarMenuButton asChild tooltip={true ? 'العودة للرئيسية' : 'Back to Main'} className="bg-muted/50 border border-border mt-2 w-full justify-start">
               <Link href="/" onClick={handleNavigate}>
                 <Home className="h-4 w-4" />
@@ -483,7 +493,7 @@ export function AppSidebar() {
           <SidebarMenu>
             {/* Main Section */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 Main
               </div>
               <SidebarMenuItem>
@@ -499,7 +509,7 @@ export function AppSidebar() {
 
             {/* Management Section */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 Management
               </div>
               <SidebarMenuItem>
@@ -547,7 +557,7 @@ export function AppSidebar() {
 
             {/* Contracts & Billing Section */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 Contracts & Billing
               </div>
               <SidebarMenuItem>
@@ -579,7 +589,7 @@ export function AppSidebar() {
 
             {/* Reports Section */}
             <div>
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 Reports
               </div>
               <SidebarMenuItem>
@@ -610,26 +620,7 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
-          <div className="p-2">
-            <div className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto p-2 border rounded-md">
-              <div className="flex items-center gap-2">
-                <Avatar className="size-8">
-                  {currentUser ? (
-                    <>
-                      <AvatarImage src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23e5e7eb'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239ca3af' font-size='20'%3EIMG%3C/text%3E%3C/svg%3E" alt={currentUser.name} data-ai-hint="profile picture" />
-                      <AvatarFallback>{currentUser.name?.charAt(0) || 'U'}</AvatarFallback>
-                    </>
-                  ) : (
-                    <AvatarFallback />
-                  )}
-                </Avatar>
-                <div className="group-data-[collapsible=icon]:hidden text-left">
-                  <p className="font-semibold text-sm">{loading ? 'Loading...' : currentUser?.name}</p>
-                  <p className="text-xs text-muted-foreground">{loading ? '' : currentUser?.role}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SidebarUser currentUser={currentUser} loading={loading} withImage />
         </SidebarFooter>
       </>
     );
@@ -735,20 +726,17 @@ export function AppSidebar() {
   return (
     <>
       <SidebarHeader>
-        <div className="flex flex-col gap-1 p-2">
-            <div className="flex items-center gap-2">
-                <Building className="h-8 w-8 text-primary" />
-                <span className="text-xl font-semibold group-data-[collapsible=icon]:hidden">EstateCare</span>
-            </div>
-            {/* Environment badge and git info removed per request */}
-        </div>
+        <SidebarBrand
+          icon={<Building className="h-8 w-8 shrink-0 text-primary" />}
+          label="EstateCare"
+        />
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
           {menuStructure.map((section, sectionIndex) => (
             <div key={`section-${sectionIndex}`}>
               {/* Section Title */}
-              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:hidden">
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
                 {section.title}
               </div>
               
@@ -800,26 +788,7 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
-        <div className="p-2">
-             <div className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto p-2 border rounded-md">
-                 <div className="flex items-center gap-2">
-                     <Avatar className="size-8">
-                       {currentUser ? (
-                         <>
-                          <AvatarImage src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23e5e7eb'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239ca3af' font-size='20'%3EIMG%3C/text%3E%3C/svg%3E" alt={currentUser.name} data-ai-hint="profile picture" />
-                          <AvatarFallback>{currentUser.name?.charAt(0) || 'U'}</AvatarFallback>
-                         </>
-                       ) : (
-                        <AvatarFallback />
-                       )}
-                    </Avatar>
-                    <div className="group-data-[collapsible=icon]:hidden text-left">
-                        <p className="font-semibold text-sm">{loading ? 'Loading...' : currentUser?.name}</p>
-                        <p className="text-xs text-muted-foreground">{loading ? '' : currentUser?.role}</p>
-                    </div>
-                 </div>
-            </div>
-        </div>
+        <SidebarUser currentUser={currentUser} loading={loading} withImage />
       </SidebarFooter>
     </>
   );

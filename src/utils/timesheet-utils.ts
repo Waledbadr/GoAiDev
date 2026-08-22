@@ -419,31 +419,36 @@ export const processPunches = (
                      // Attempt to get employee name safely
                      const empName = emp.name || emp.nameAr || emp.firstName || emp.nameEn || empId;
                      
-                     // Find the last known project for this employee from actual punches
-                     let lastProject = null;
-                     let lastDate = "";
-                     // Look backward
+                     // Resolve the residence for a no-punch day (Friday rest, absence, …)
+                     // from the employee's nearest REAL punch — a day they actually
+                     // attended somewhere. Only records carrying a device are real; the
+                     // generated ones below would otherwise chain a stale guess forward.
+                     // Nearest previous day wins; if none, nearest following day.
+                     let lastProject: string | null = null;
+                     let bestPrevDate = '';
+                     let bestNextDate = '';
+
                      for (const p of parsed) {
-                         if (String(p.employeeId) === String(empId) && p.date < dateStr) {
-                             if (!lastProject || p.date > lastDate) {
-                                 lastProject = p.projectName;
-                                 lastDate = p.date;
-                             }
+                         if (String(p.employeeId) !== String(empId)) continue;
+                         if (!p.projectName || p.checkInDevice === 'System Generated') continue;
+
+                         if (p.date < dateStr && p.date > bestPrevDate) {
+                             bestPrevDate = p.date;
+                         } else if (p.date > dateStr && (!bestNextDate || p.date < bestNextDate)) {
+                             bestNextDate = p.date;
                          }
                      }
-                     // Look forward if no backward punch exists
-                     if (!lastProject) {
-                         lastDate = "9999-99-99";
-                         for (const p of parsed) {
-                             if (String(p.employeeId) === String(empId) && p.date > dateStr) {
-                                 if (!lastProject || p.date < lastDate) {
-                                     lastProject = p.projectName;
-                                     lastDate = p.date;
-                                 }
-                             }
-                         }
+
+                     const anchorDate = bestPrevDate || bestNextDate;
+                     if (anchorDate) {
+                         lastProject = parsed.find(p =>
+                             String(p.employeeId) === String(empId) &&
+                             p.date === anchorDate &&
+                             p.projectName &&
+                             p.checkInDevice !== 'System Generated'
+                         )?.projectName || null;
                      }
-                     
+
                      const empProject = lastProject || emp.projectName || emp.project || emp.residenceId || 'Unknown Residence';
 
                      parsed.push({

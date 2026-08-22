@@ -1,7 +1,7 @@
 'use client';
 
 import type { PropsWithChildren } from 'react';
-import { SidebarProvider, Sidebar, SidebarInset } from '@/components/ui/sidebar';
+import { SidebarProvider, Sidebar, SidebarInset, SidebarRail } from '@/components/ui/sidebar';
 import { AppSidebar } from './sidebar';
 import { AppHeader } from './header';
 import RequireAuth from '@/components/auth/require-auth';
@@ -35,8 +35,15 @@ function AppLayoutInner({ children }: PropsWithChildren) {
   return (
     <RequireAuth>
       <SidebarProvider defaultOpen className="print:block print:h-auto print:min-h-0">
-        <Sidebar side={locale === 'ar' ? 'right' : 'left'} className="no-print">
+        {/* collapsible="icon" keeps an icon-only rail on screen instead of
+            sliding the whole panel off, so navigation stays one click away. */}
+        <Sidebar
+          side={locale === 'ar' ? 'right' : 'left'}
+          collapsible="icon"
+          className="no-print"
+        >
           <AppSidebar />
+          <SidebarRail />
         </Sidebar>
         <SidebarInset className="flex flex-col min-w-0 w-full print:block print:h-auto print:min-h-0">
           <AppHeader className="no-print" />
