@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -86,34 +86,42 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
         setExceptionData({ type: 'Permission', startDate: '', endDate: '', hours: '', reason: '' });
       }
       
+      const sortByDateOrCreated = (items: any[]) => {
+        return items.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0) || (typeof a.createdAt === 'string' ? new Date(a.createdAt).getTime() : 0) || (a.date ? new Date(a.date).getTime() : 0);
+          const timeB = b.createdAt?.toMillis?.() || (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0) || (typeof b.createdAt === 'string' ? new Date(b.createdAt).getTime() : 0) || (b.date ? new Date(b.date).getTime() : 0);
+          return timeB - timeA;
+        });
+      };
+
       // Fetch Leaves
       const qLeaves = query(
         collection(db, 'timesheetLeaves'),
-        where('employeeId', '==', employee.id),
-        orderBy('createdAt', 'desc')
+        where('employeeId', '==', employee.id)
       );
       const unsubLeaves = onSnapshot(qLeaves, (snap) => {
-        setLeaves(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setLeaves(sortByDateOrCreated(items));
       }, (err) => console.warn('Leaves subscription notice:', err));
 
       // Fetch Transfers
       const qTransfers = query(
         collection(db, 'timesheetTransfers'),
-        where('employeeId', '==', employee.id),
-        orderBy('createdAt', 'desc')
+        where('employeeId', '==', employee.id)
       );
       const unsubTransfers = onSnapshot(qTransfers, (snap) => {
-        setTransfers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setTransfers(sortByDateOrCreated(items));
       }, (err) => console.warn('Transfers subscription notice:', err));
 
       // Fetch Exceptions
       const qExceptions = query(
         collection(db, 'timesheetExceptions'),
-        where('employeeId', '==', employee.id),
-        orderBy('createdAt', 'desc')
+        where('employeeId', '==', employee.id)
       );
       const unsubExceptions = onSnapshot(qExceptions, (snap) => {
-        setExceptions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setExceptions(sortByDateOrCreated(items));
       }, (err) => console.warn('Exceptions subscription notice:', err));
 
       return () => {

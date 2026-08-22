@@ -37,52 +37,72 @@ interface HousingEmployeesContextType {
   loading: boolean;
   addEmployee: (data: Omit<HousingEmployee, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateEmployee: (id: string, data: Partial<HousingEmployee>) => Promise<void>;
+  refreshEmployees: () => Promise<void>;
 }
 
 const HousingEmployeesContext = createContext<HousingEmployeesContextType | undefined>(undefined);
 
+// Shared in-memory cache across provider remounts (navigation)
+let cachedHousingEmployees: HousingEmployee[] | null = null;
+let lastEmployeesFetchTime = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export function HousingEmployeesProvider({ children }: { children: ReactNode }) {
-  const [employees, setEmployees] = useState<HousingEmployee[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [employees, setEmployees] = useState<HousingEmployee[]>(() => cachedHousingEmployees || []);
+  const [loading, setLoading] = useState(() => !cachedHousingEmployees);
   const { currentUser } = useUsers();
   const { toast } = useToast();
 
+  const fetchEmployees = async (force = false) => {
+    if (!force && cachedHousingEmployees && (Date.now() - lastEmployeesFetchTime < CACHE_TTL_MS)) {
+      setEmployees(cachedHousingEmployees);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const employeesRef = collection(db as any, 'housingEmployees');
+      const q = query(employeesRef, orderBy('createdAt', 'desc'));
+      
+      const snapshot = await getDocs(q);
+      const emps: HousingEmployee[] = [];
+      snapshot.forEach((doc) => {
+        emps.push({ id: doc.id, ...doc.data() } as HousingEmployee);
+      });
+
+      cachedHousingEmployees = emps;
+      lastEmployeesFetchTime = Date.now();
+      setEmployees(emps);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching housing employees:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load employees data.',
+        variant: 'destructive',
+      });
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!currentUser) return; // Wait for authentication
-
-    const fetchEmployees = async () => {
-      try {
-        const employeesRef = collection(db as any, 'housingEmployees');
-        const q = query(employeesRef, orderBy('createdAt', 'desc'));
-        
-        const snapshot = await getDocs(q);
-        const emps: HousingEmployee[] = [];
-        snapshot.forEach((doc) => {
-          emps.push({ id: doc.id, ...doc.data() } as HousingEmployee);
-        });
-        setEmployees(emps);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching housing employees:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load employees data.',
-          variant: 'destructive',
-        });
-        setLoading(false);
-      }
-    };
-
     fetchEmployees();
-  }, [currentUser, toast]);
+  }, [currentUser]);
 
   const addEmployee = async (data: Omit<HousingEmployee, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       const employeesRef = collection(db, 'housingEmployees');
-      await addDoc(employeesRef, {
+      const docRef = await addDoc(employeesRef, {
         ...data,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+      const newEmp = { id: docRef.id, ...data, createdAt: new Date(), updatedAt: new Date() } as HousingEmployee;
+      setEmployees(prev => {
+        const next = [newEmp, ...prev];
+        cachedHousingEmployees = next;
+        return next;
       });
       toast({
         title: 'Success',
@@ -106,6 +126,11 @@ export function HousingEmployeesProvider({ children }: { children: ReactNode }) 
         ...data,
         updatedAt: serverTimestamp(),
       });
+      setEmployees(prev => {
+        const next = prev.map(emp => emp.id === id ? { ...emp, ...data, updatedAt: new Date() } : emp);
+        cachedHousingEmployees = next;
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'Employee updated successfully.',
@@ -121,6 +146,10 @@ export function HousingEmployeesProvider({ children }: { children: ReactNode }) 
     }
   };
 
+  const refreshEmployees = async () => {
+    await fetchEmployees(true);
+  };
+
   return (
     <HousingEmployeesContext.Provider
       value={{
@@ -128,6 +157,7 @@ export function HousingEmployeesProvider({ children }: { children: ReactNode }) 
         loading,
         addEmployee,
         updateEmployee,
+        refreshEmployees,
       }}
     >
       {children}

@@ -70,9 +70,8 @@ if (isFirebaseConfigured) {
       }
     }
 
-    // Decide cache strategy
-    const useMemoryCache = (process.env.NEXT_PUBLIC_FIRESTORE_CACHE || '').toLowerCase() === 'memory'
-      || process.env.NODE_ENV !== 'production';
+    // Decide cache strategy (persistent IndexedDB by default to save reads)
+    const useMemoryCache = (process.env.NEXT_PUBLIC_FIRESTORE_CACHE || '').toLowerCase() === 'memory';
 
     // Initialize Firestore with robust local cache and network settings
     try {
@@ -81,8 +80,7 @@ if (isFirebaseConfigured) {
           ? memoryLocalCache()
           : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
         ignoreUndefinedProperties: true,
-        experimentalForceLongPolling: useMemoryCache, // avoid primary lease contention in dev
-        experimentalAutoDetectLongPolling: !useMemoryCache,
+        experimentalAutoDetectLongPolling: true,
       } as any);
     } catch {
       try {

@@ -85,11 +85,17 @@ const getOvertimeHours = (record: any) => {
 
 const isExportableEmployee = (employee: any) => {
   const status = String(employee?.status || '').toLowerCase();
-  const residenceStatus = String(employee?.residenceStatus || '').toLowerCase();
-  return status !== 'inactive' && status !== 'transferred' && residenceStatus !== 'outside';
+  return status !== 'inactive' && status !== 'transferred';
 };
 
 const normalizeLocalDate = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0);
+
+// In-memory cache for leaves & transfers to save reads when switching dates
+let cachedLeaves: any[] | null = null;
+let lastLeavesFetch = 0;
+let cachedTransfers: any[] | null = null;
+let lastTransfersFetch = 0;
+const AUX_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function TimesheetDailyExportContent() {
   const { locale } = useLanguage();
@@ -117,15 +123,39 @@ function TimesheetDailyExportContent() {
 
     setIsLoading(true);
     try {
-      const [attendanceSnap, leavesSnap, transfersSnap] = await Promise.all([
-        getDocs(query(collection(db as any, 'attendanceRecords'), where('date', '==', selectedDateLabel))),
-        getDocs(collection(db as any, 'timesheetLeaves')),
-        getDocs(collection(db as any, 'timesheetTransfers')),
-      ]);
+      const now = Date.now();
+      const needsLeavesFetch = !cachedLeaves || (now - lastLeavesFetch > AUX_CACHE_TTL);
+      const needsTransfersFetch = !cachedTransfers || (now - lastTransfersFetch > AUX_CACHE_TTL);
 
-      const attendanceRecords = attendanceSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      const leaveRecords = leavesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      const transferRecords = transfersSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const promises: Promise<any>[] = [
+        getDocs(query(collection(db as any, 'attendanceRecords'), where('date', '==', selectedDateLabel)))
+      ];
+
+      if (needsLeavesFetch) {
+        promises.push(getDocs(collection(db as any, 'timesheetLeaves')));
+      }
+      if (needsTransfersFetch) {
+        promises.push(getDocs(collection(db as any, 'timesheetTransfers')));
+      }
+
+      const results = await Promise.all(promises);
+      const attendanceSnap = results[0];
+      let resIdx = 1;
+
+      if (needsLeavesFetch) {
+        const leavesSnap = results[resIdx++];
+        cachedLeaves = leavesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        lastLeavesFetch = now;
+      }
+      if (needsTransfersFetch) {
+        const transfersSnap = results[resIdx++];
+        cachedTransfers = transfersSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        lastTransfersFetch = now;
+      }
+
+      const attendanceRecords = attendanceSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      const leaveRecords = cachedLeaves || [];
+      const transferRecords = cachedTransfers || [];
 
       const activeEmployees = employees.filter((employee) => isExportableEmployee(employee));
 

@@ -904,8 +904,8 @@ function TimesheetHistoryContent() {
           moveOutDate = String(empRecord.moveOutDate);
         } else if (empRecord?.exitDate) {
           moveOutDate = String(empRecord.exitDate);
-        } else if (empRecord?.status === 'Transferred' || empRecord?.residenceStatus === 'Outside') {
-          // Fallback if status is Transferred/Outside
+        } else if (empRecord?.status === 'Transferred') {
+          // Fallback if status is Transferred
           moveOutDate = '1970-01-01';
         }
 
