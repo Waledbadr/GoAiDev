@@ -19,11 +19,17 @@ import {
   CheckCircle2, Building2, Store, Home, Wrench, Droplets, Flame, Wifi, Users,
   FileText, DollarSign, Calendar, ShieldCheck, Plus, Trash2, Search, Sparkles,
   ChevronRight, ChevronLeft, Shield, Zap, Receipt, FileSpreadsheet, UserCheck,
-  Clock, RefreshCw, ChevronDown, ChevronUp, FilePlus, Layers
+  Clock, RefreshCw, ChevronDown, ChevronUp, FilePlus, Layers, AlertTriangle, Info
 } from 'lucide-react';
 import { UnifiedDatePicker } from '@/components/ui/hijri-date-picker';
 import { getHijriFromGregorian, hijriToGregorianISO } from '@/lib/hijri-date-utils';
 import { useContracts } from '@/context/contracts-context';
+import {
+  validateContractForm,
+  blockingIssues,
+  issuesForStep,
+  type ValidationIssue,
+} from '@/lib/contract-validation';
 import {
   type Contract,
   type ContractFormData,
@@ -63,7 +69,7 @@ interface ContractWizardDialogProps {
   companies: CompanyOption[];
   residences: ResidenceOption[];
   allContracts?: Contract[];
-  onSubmit: (formData: ContractFormData) => Promise<void>;
+  onSubmit: (formData: ContractFormData, status?: 'Active' | 'Draft') => Promise<void>;
   isAr?: boolean;
 }
 
@@ -395,10 +401,10 @@ export function ContractWizardDialog({
     return residences.filter(r => r.name.toLowerCase().includes(q) || (r.code && r.code.toLowerCase().includes(q)));
   }, [residences, residenceSearch]);
 
-  const handleFinalSubmit = async () => {
+  const handleFinalSubmit = async (status: 'Active' | 'Draft' = 'Active') => {
     try {
       setIsSubmitting(true);
-      await onSubmit(formData);
+      await onSubmit(formData, status);
       onOpenChange(false);
     } catch (err) {
       console.error('Failed to submit contract wizard:', err);
@@ -407,13 +413,26 @@ export function ContractWizardDialog({
     }
   };
 
+  const issues = useMemo<ValidationIssue[]>(
+    () =>
+      validateContractForm(formData, {
+        existingContracts: allContracts,
+        excludeId: mode === 'edit' ? selectedContract?.id : undefined,
+      }),
+    [formData, allContracts, mode, selectedContract]
+  );
+
+  const errors = useMemo(() => blockingIssues(issues), [issues]);
+  const warnings = useMemo(() => issues.filter(i => i.severity === 'warning'), [issues]);
+
+  // كل خطوة تُغلق على أخطائها فقط: منع التقدّم بسبب حقل في خطوة لاحقة لم
+  // يزرها المستخدم بعد يترك الزر معطلاً بلا سبب ظاهر.
   const canGoNext = useMemo(() => {
     if (step === 1) return !!formData.contractType;
-    if (step === 2) return !!formData.partyName.trim();
-    if (step === 3) return formData.billingRate >= 0;
-    if (step === 4) return formData.isOpenEnded || !!formData.startDate;
-    return true;
-  }, [step, formData]);
+    return blockingIssues(issuesForStep(issues, step)).length === 0;
+  }, [step, formData.contractType, issues]);
+
+  const canSubmit = errors.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1429,17 +1448,71 @@ export function ContractWizardDialog({
           {/* STEP 5: Summary & Confirm */}
           {step === 5 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-3">
-                <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0" />
-                <div>
-                  <h4 className="font-bold text-sm text-emerald-800 dark:text-emerald-300">
-                    {isAr ? 'العقد جاهز للاعتماد والإنشاء النهائي!' : 'Contract Ready to Save!'}
-                  </h4>
-                  <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                    {isAr ? 'تم تطبيق الأقسام الديناميكية والضمانات بنجاح. انقر زر الحفظ أدناه.' : 'Review summary below.'}
-                  </p>
+              {errors.length > 0 ? (
+                <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
+                    <h4 className="font-bold text-sm text-rose-800 dark:text-rose-300">
+                      {isAr
+                        ? `${errors.length} مشكلة تمنع حفظ العقد`
+                        : `${errors.length} issue(s) blocking save`}
+                    </h4>
+                  </div>
+                  <ul className="space-y-1.5 ps-7">
+                    {errors.map((issue, i) => (
+                      <li key={`${issue.field}-${i}`} className="text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                        <span>• {isAr ? issue.messageAr : issue.messageEn}</span>
+                        <button
+                          type="button"
+                          onClick={() => setStep(issue.step)}
+                          className="underline underline-offset-2 hover:no-underline font-semibold shrink-0"
+                        >
+                          {isAr ? `اذهب للخطوة ${issue.step}` : `Go to step ${issue.step}`}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-3">
+                  <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-sm text-emerald-800 dark:text-emerald-300">
+                      {isAr ? 'العقد جاهز للاعتماد والإنشاء النهائي!' : 'Contract Ready to Save!'}
+                    </h4>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                      {isAr ? 'اجتاز العقد كل قواعد التحقق. راجع الملخص أدناه ثم احفظ.' : 'All validation rules passed. Review the summary below, then save.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {warnings.length > 0 && (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-5 w-5 text-amber-600 shrink-0" />
+                    <h4 className="font-bold text-sm text-amber-800 dark:text-amber-300">
+                      {isAr
+                        ? `${warnings.length} ملاحظة تستحق المراجعة (لا تمنع الحفظ)`
+                        : `${warnings.length} warning(s) worth reviewing (save is still allowed)`}
+                    </h4>
+                  </div>
+                  <ul className="space-y-1.5 ps-7">
+                    {warnings.map((issue, i) => (
+                      <li key={`${issue.field}-${i}`} className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                        <span>• {isAr ? issue.messageAr : issue.messageEn}</span>
+                        <button
+                          type="button"
+                          onClick={() => setStep(issue.step)}
+                          className="underline underline-offset-2 hover:no-underline font-semibold shrink-0"
+                        >
+                          {isAr ? `اذهب للخطوة ${issue.step}` : `Go to step ${issue.step}`}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Summary Sheet */}
               <div className="border-2 border-border rounded-2xl overflow-hidden bg-card shadow-sm">
@@ -1547,19 +1620,39 @@ export function ContractWizardDialog({
                 )}
               </Button>
             ) : (
-              <Button
-                type="button"
-                onClick={handleFinalSubmit}
-                disabled={isSubmitting}
-                className="gap-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {isSubmitting
-                  ? (isAr ? 'جاري الحفظ...' : 'Saving...')
-                  : mode === 'edit'
-                  ? (isAr ? 'حفظ التعديلات' : 'Save Changes')
-                  : (isAr ? 'تأكيد وإنشاء العقد الآن' : 'Create Contract Now')}
-              </Button>
+              <>
+                {mode === 'create' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleFinalSubmit('Draft')}
+                    disabled={isSubmitting}
+                    className="gap-2 text-xs font-bold"
+                    title={isAr
+                      ? 'يحفظ العقد كمسودة غير سارية — لا يدخل التقارير ولا تُصدر له فواتير.'
+                      : 'Saves as a non-active draft — excluded from reports and invoicing.'}
+                  >
+                    <FileText className="h-4 w-4" />
+                    {isAr ? 'حفظ كمسودة' : 'Save as Draft'}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={() => handleFinalSubmit('Active')}
+                  disabled={isSubmitting || !canSubmit}
+                  title={!canSubmit
+                    ? (isAr ? 'صحّح الأخطاء المذكورة أعلاه أولاً' : 'Fix the errors listed above first')
+                    : undefined}
+                  className="gap-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {isSubmitting
+                    ? (isAr ? 'جاري الحفظ...' : 'Saving...')
+                    : mode === 'edit'
+                    ? (isAr ? 'حفظ التعديلات' : 'Save Changes')
+                    : (isAr ? 'تأكيد وإنشاء العقد الآن' : 'Create Contract Now')}
+                </Button>
+              </>
             )}
           </div>
         </div>

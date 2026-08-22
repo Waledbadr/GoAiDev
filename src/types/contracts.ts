@@ -216,13 +216,80 @@ export interface Contract {
   createdBy?: string;
   createdAt: string;
   updatedAt?: string;
+
+  // ---- الأرشفة ----
+  // العقد سجل مالي صادر لطرف آخر، فلا يُمحى: يُؤرشف فيختفي من القوائم ويبقى
+  // مرجعاً لفواتيره. الحذف النهائي مسار منفصل ومقصود.
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
+}
+
+// ---- قيد في سجل تغييرات العقد ----
+export type ContractChangeAction =
+  | 'created'
+  | 'updated'
+  | 'renewed'
+  | 'suspended'
+  | 'cancelled'
+  | 'activated'
+  | 'archived';
+
+export interface ContractFieldChange {
+  field: string;
+  before: string | number | boolean | null;
+  after: string | number | boolean | null;
+}
+
+export interface ContractChange {
+  id: string;
+  contractId: string;
+  action: ContractChangeAction;
+  /** الحقول المالية والزمنية فقط؛ تغيير ملاحظة لا يستحق قيداً. */
+  changes: ContractFieldChange[];
+  byUid?: string | null;
+  at: string;
+  note?: string;
+}
+
+/**
+ * الحقول التي يُتتبَّع تغيّرها. مقصورة على ما يغيّر المال أو المدة أو الأطراف —
+ * وهو ما يُسأل عنه عند أي خلاف — حتى لا يغرق السجل في تعديلات تجميلية.
+ */
+export const TRACKED_CONTRACT_FIELDS = [
+  'billingRate',
+  'billingType',
+  'vatPercentage',
+  'startDate',
+  'endDate',
+  'isOpenEnded',
+  'status',
+  'partyId',
+  'partyName',
+  'linkedResidences',
+  'contractType',
+  'autoRenew',
+  'renewalType',
+] as const;
+
+// ---- سطر فاتورة (لعقود التسكين المحسوبة من الإشغال) ----
+// كل عامل سطر مستقل: يجعل الفاتورة قابلة للشرح والاعتراض سطراً سطراً،
+// بدل مبلغ إجمالي لا يمكن مراجعته.
+export interface ContractInvoiceLine {
+  workerId: string;
+  name: string;
+  idNumber?: string;
+  residenceId: string;
+  days: number;
+  dailyRate: number;
+  amount: number;
 }
 
 // ---- فاتورة العقد ----
 export interface ContractInvoice {
   id: string;
   contractId: string;
-  month: string; // YYYY-MM
+  month: string; // YYYY-MM (الشهر المالي، وليس الميلادي)
   amount: number;
   description?: string;
   status: ContractInvoiceStatus;
@@ -230,6 +297,20 @@ export interface ContractInvoice {
   paidAt?: string;
   invoiceNumber?: string;
   notes?: string;
+
+  // ---- حقول عقود التسكين المحسوبة من الإشغال ----
+  // الفترة المالية الفعلية التي حُسبت عليها الفاتورة. تُحفظ صراحةً لأن الشهر
+  // المالي يبدأ في الحادي والعشرين تقريباً، فلا يمكن اشتقاقه من `month` وحده.
+  periodStart?: string; // ISO
+  periodEnd?: string;   // ISO
+  residenceId?: string;
+  numberOfWorkers?: number;
+  numberOfDays?: number; // مجموع أيام الإشغال المفوترة لكل العمال
+  dailyRate?: number;
+  lines?: ContractInvoiceLine[];
+
+  // مرجع الفاتورة المقابلة في نظام السكن القديم، للمطابقة أثناء فترة التوازي.
+  legacyInvoiceId?: string;
 }
 
 // ---- تنبيه العقد ----
@@ -252,6 +333,12 @@ export interface ContractStats {
   draftContracts: number;
   totalMonthlyRevenue: number;
   totalMonthlyExpense: number;
+  // الجزء المقدَّر من الإجماليين أعلاه (مشتق من أعداد متوقعة لا من إشغال فعلي).
+  estimatedMonthlyRevenue: number;
+  estimatedMonthlyExpense: number;
+  // عقود نشطة لا يمكن اشتقاق قيمة شهرية لها من شروطها (لمرة واحدة، حسب الفاتورة،
+  // أو عقود بالفرد بلا عدد أفراد مستهدف).
+  unvaluedContracts: number;
   expiringThisMonth: number;
   expiringNextMonth: number;
   contractsByType: Record<ContractType, number>;
@@ -623,6 +710,84 @@ export function getRenewalTypeLabel(type: RenewalType, isAr: boolean): string {
     auto_same_duration: { ar: 'تجديد تلقائي بنفس مدة العقد (فترة مماثلة)', en: 'Auto Same Duration' },
   };
   return isAr ? labels[type]?.ar || type : labels[type]?.en || type;
+}
+
+// ---- تطبيع القيمة الشهرية للعقد ----
+// عدد الأيام الاسمي للشهر، نفس الثابت المستخدم في محرك الفوترة، حتى تتطابق
+// تقديرات لوحة المعلومات مع ما تصدره الفواتير فعلياً.
+export const NOMINAL_DAYS_PER_MONTH = 30;
+
+export type MonthlyValueBasis =
+  | 'exact'      // مبلغ تعاقدي شهري صريح
+  | 'estimated'  // مشتق من عدد أفراد/وحدات متوقع، وليس من إشغال فعلي
+  | 'unknown';   // لا يمكن اشتقاق قيمة شهرية من شروط العقد وحدها
+
+export interface MonthlyValue {
+  amount: number;
+  basis: MonthlyValueBasis;
+}
+
+/**
+ * القيمة الشهرية المكافئة لعقد واحد.
+ *
+ * لوحة المعلومات كانت تجمع `billingRate` كما هو لكل عقد شهري، فتضيف سعر الفرد
+ * الواحد في عقد تسكين (35 ر.س مثلاً) إلى إيجار مبنى كامل (50,000 ر.س) في نفس
+ * الخانة، وتتجاهل العقود السنوية واليومية تماماً. هذه الدالة تُرجع القيمة
+ * الشهرية مع بيان مصدرها، حتى تُعرض التقديرات على أنها تقديرات بدل أن تُخلط
+ * بالمبالغ المؤكدة.
+ *
+ * العقود المفوترة من الإشغال (شخص/يوم) تُقدَّر هنا من العدد المستهدف فقط؛
+ * القيمة الحقيقية لا تُعرف إلا بعد تشغيل الفوترة على أيام الإشغال الفعلية.
+ */
+export function getMonthlyValue(contract: {
+  billingType: BillingType;
+  billingRate?: number;
+  accommodationDetails?: { targetWorkersCount?: number; bedsCount?: number };
+  linkedUnits?: string[];
+  services?: ContractService[];
+}): MonthlyValue {
+  const rate = contract.billingRate || 0;
+
+  // عقود الخدمات قد تترك `billingRate` صفراً وتضع المبالغ في بنود الخدمات،
+  // وهو ما تفعله دالة إصدار الفواتير الشهرية أيضاً.
+  const monthlyServices = (contract.services || [])
+    .filter(s => s.frequency === 'monthly')
+    .reduce((sum, s) => sum + (s.rate || 0), 0);
+
+  switch (contract.billingType) {
+    case 'fixed_monthly':
+      if (rate > 0) return { amount: rate, basis: 'exact' };
+      if (monthlyServices > 0) return { amount: monthlyServices, basis: 'exact' };
+      return { amount: 0, basis: 'unknown' };
+
+    case 'fixed_yearly':
+      return { amount: rate / 12, basis: 'exact' };
+
+    case 'per_person_per_month': {
+      const persons = contract.accommodationDetails?.targetWorkersCount || 0;
+      if (!persons) return { amount: 0, basis: 'unknown' };
+      return { amount: rate * persons, basis: 'estimated' };
+    }
+
+    case 'per_person_per_day': {
+      const persons = contract.accommodationDetails?.targetWorkersCount || 0;
+      if (!persons) return { amount: 0, basis: 'unknown' };
+      return { amount: rate * persons * NOMINAL_DAYS_PER_MONTH, basis: 'estimated' };
+    }
+
+    case 'per_room_per_month': {
+      const units = contract.linkedUnits?.length || 0;
+      if (!units) return { amount: 0, basis: 'unknown' };
+      return { amount: rate * units, basis: 'estimated' };
+    }
+
+    // مبالغ غير متكررة أو محكومة بفاتورة المورد: لا قيمة شهرية ثابتة لها.
+    case 'one_time':
+    case 'per_invoice':
+    case 'per_unit':
+    default:
+      return { amount: 0, basis: 'unknown' };
+  }
 }
 
 export function formatSAR(amount: number): string {

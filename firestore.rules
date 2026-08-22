@@ -120,6 +120,14 @@ service cloud.firestore {
       allow delete: if isAdmin() || isSupervisor();
     }
 
+    // Contract Change Log — سجل تغييرات العقود
+    // قيود السجل تُكتب ولا تُعدَّل ولا تُحذف: سجل يمكن تحريره لا يصلح مرجعاً.
+    match /contractHistory/{entryId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() || isSupervisor();
+      allow update, delete: if false;
+    }
+
     // Contract Alerts
     match /contractAlerts/{alertId} {
       allow read: if isSignedIn();

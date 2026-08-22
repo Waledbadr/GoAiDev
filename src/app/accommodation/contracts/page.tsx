@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Edit, Trash2, FileText, TrendingUp, Calendar, Building2, Check } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, TrendingUp, Calendar, Building2, Check, AlertTriangle } from 'lucide-react';
+import { flagLegacyContract, hasCritical, type RateFlag } from '@/lib/contract-data-quality';
 import { useSearchParams } from 'next/navigation';
 
 export default function ContractsPage() {
@@ -39,6 +40,8 @@ export default function ContractsPage() {
     startDate: '',
     endDate: '',
     ratePerPersonPerMonth: 0,
+    // الوحدة الحقيقية للاتفاقات يومية، فهي المبدئية للعقود الجديدة.
+    rateUnit: 'daily' as 'daily' | 'monthly',
     expectedWorkers: 0,
     status: 'Active' as Contract['status'],
     notes: '',
@@ -77,6 +80,22 @@ export default function ContractsPage() {
       }
     });
   };
+
+  // فحص جودة البيانات لكل العقود، لا للمعروضة فقط: عقد بسعر خاطئ مخفيّ خلف
+  // فلتر لا يزال يصدر فواتير خاطئة.
+  const contractFlags = useMemo(() => {
+    const map: Record<string, RateFlag[]> = {};
+    contracts.forEach(contract => {
+      const flags = flagLegacyContract(contract);
+      if (flags.length > 0) map[contract.id] = flags;
+    });
+    return map;
+  }, [contracts]);
+
+  const criticalContracts = useMemo(
+    () => contracts.filter(c => hasCritical(contractFlags[c.id] || [])),
+    [contracts, contractFlags]
+  );
 
   const filteredContracts = useMemo(() => {
     return contracts.filter(contract => {
@@ -119,6 +138,9 @@ export default function ContractsPage() {
         startDate: contract.startDate.split('T')[0],
         endDate: contract.endDate.split('T')[0],
         ratePerPersonPerMonth: contract.ratePerPersonPerMonth,
+        // العقود المحفوظة قبل وجود الحقل تصل بلا وحدة؛ تُترك فارغة ليختارها
+        // المستخدم بدل أن تُملأ بقيمة مبدئية قد تكون خاطئة.
+        rateUnit: contract.rateUnit ?? ('' as unknown as 'daily' | 'monthly'),
         expectedWorkers: contract.expectedWorkers || 0,
         status: contract.status,
         notes: contract.notes || '',
@@ -131,6 +153,7 @@ export default function ContractsPage() {
         startDate: '',
         endDate: '',
         ratePerPersonPerMonth: 0,
+        rateUnit: 'daily',
         expectedWorkers: 0,
         status: 'Active',
         notes: '',
@@ -139,11 +162,28 @@ export default function ContractsPage() {
     setDialogOpen(true);
   };
 
+  /**
+   * حسم وحدة الأجرة لعقد قائم. لا يغيّر الرقم — يسجّل فقط ما يعنيه، وهو ما كان
+   * ناقصاً منذ البداية.
+   */
+  const setRateUnit = async (contract: Contract, unit: 'daily' | 'monthly') => {
+    try {
+      await saveContract({ ...contract, rateUnit: unit });
+    } catch (error) {
+      console.error('Failed to set rate unit:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (formData.residenceIds.length === 0) {
       alert('الرجاء اختيار سكن واحد على الأقل');
+      return;
+    }
+
+    if (formData.rateUnit !== 'daily' && formData.rateUnit !== 'monthly') {
+      alert('حدّد وحدة الأجرة: لكل يوم أم لكل شهر. بدونها لا يمكن إصدار فواتير لهذا العقد.');
       return;
     }
     
@@ -162,6 +202,7 @@ export default function ContractsPage() {
           startDate: new Date(formData.startDate).toISOString(),
           endDate: new Date(formData.endDate).toISOString(),
           ratePerPersonPerMonth: formData.ratePerPersonPerMonth,
+          rateUnit: formData.rateUnit,
           expectedWorkers: formData.expectedWorkers,
           status: formData.status,
           notes: formData.notes,
@@ -174,6 +215,7 @@ export default function ContractsPage() {
           startDate: new Date(formData.startDate).toISOString(),
           endDate: new Date(formData.endDate).toISOString(),
           ratePerPersonPerMonth: formData.ratePerPersonPerMonth,
+          rateUnit: formData.rateUnit,
           expectedWorkers: formData.expectedWorkers,
           status: formData.status,
           notes: formData.notes,
@@ -390,15 +432,40 @@ export default function ContractsPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="ratePerPersonPerMonth">Rate per Person/Month (SAR) *</Label>
-                    <Input
-                      id="ratePerPersonPerMonth"
-                      type="number"
-                      step="0.01"
-                      value={formData.ratePerPersonPerMonth}
-                      onChange={(e) => setFormData({ ...formData, ratePerPersonPerMonth: parseFloat(e.target.value) })}
-                      required
-                    />
+                    <Label htmlFor="ratePerPersonPerMonth">
+                      أجرة الفرد (ر.س) <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="ratePerPersonPerMonth"
+                        type="number"
+                        step="0.01"
+                        value={formData.ratePerPersonPerMonth}
+                        onChange={(e) => setFormData({ ...formData, ratePerPersonPerMonth: parseFloat(e.target.value) })}
+                        required
+                        className="flex-1"
+                      />
+                      {/* الوحدة تُختار صراحةً. كان الحقل معنوناً «Rate per
+                          Person/Month» بينما الاتفاق يومي، فأُدخلت أرقام يومية
+                          وأخرى شهرية في نفس الخانة ولا شيء يميّزها. */}
+                      <Select
+                        value={formData.rateUnit}
+                        onValueChange={(value: 'daily' | 'monthly') => setFormData({ ...formData, rateUnit: value })}
+                      >
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="daily">لكل يوم</SelectItem>
+                          <SelectItem value="monthly">لكل شهر</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {formData.rateUnit === 'daily'
+                        ? `يُفوتَر ${(formData.ratePerPersonPerMonth || 0).toFixed(2)} ر.س عن كل يوم إشغال لكل فرد.`
+                        : `${(formData.ratePerPersonPerMonth || 0).toFixed(2)} ر.س شهرياً = ${((formData.ratePerPersonPerMonth || 0) / 30).toFixed(2)} ر.س لكل يوم إشغال.`}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="expectedWorkers">Expected Workers</Label>
@@ -474,6 +541,69 @@ export default function ContractsPage() {
         </Select>
       </div>
 
+      {criticalContracts.length > 0 && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              {criticalContracts.length} عقد لا تُصدر له فواتير حالياً
+            </CardTitle>
+            <CardDescription>
+              الحقل كان معنوناً «Rate per Person/Month» بينما الاتفاقات بالأجرة اليومية،
+              فاختلطت الوحدتان في خانة واحدة. حدّد وحدة كل عقد أدناه — لا شيء يُحفظ
+              إلا بضغطك، ولن تُصدر فاتورة قبل ذلك.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {criticalContracts.map(contract => {
+              const company = companies.find(c => c.id === contract.companyId);
+              const flags = (contractFlags[contract.id] || []).filter(f => f.severity === 'critical');
+              const unitFlag = flags.find(f => f.kind === 'unresolved_rate_unit');
+              return (
+                <div key={contract.id} className="text-sm border-s-2 border-destructive ps-3">
+                  <div className="font-medium">
+                    {company?.name || contract.companyId}
+                    <span className="text-muted-foreground font-normal text-xs">
+                      {' '}· {new Date(contract.startDate).toLocaleDateString()} — {new Date(contract.endDate).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {flags.map((flag, i) => (
+                    <div key={i} className="text-xs text-muted-foreground mt-0.5" dir="rtl">
+                      {flag.messageAr}
+                    </div>
+                  ))}
+                  {unitFlag && (
+                    <div className="flex flex-wrap items-center gap-2 mt-2" dir="rtl">
+                      <span className="text-xs text-muted-foreground">
+                        {contract.ratePerPersonPerMonth} ر.س هي:
+                      </span>
+                      <Button
+                        size="sm"
+                        variant={unitFlag.suggested === 'daily' ? 'default' : 'outline'}
+                        className="h-7 text-xs"
+                        onClick={() => setRateUnit(contract, 'daily')}
+                      >
+                        أجرة يومية ← {unitFlag.ifDaily}
+                        {unitFlag.suggested === 'daily' ? ' (المرجّح)' : ''}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={unitFlag.suggested === 'monthly' ? 'default' : 'outline'}
+                        className="h-7 text-xs"
+                        onClick={() => setRateUnit(contract, 'monthly')}
+                      >
+                        أجرة شهرية ← {unitFlag.ifMonthly}
+                        {unitFlag.suggested === 'monthly' ? ' (المرجّح)' : ''}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Contracts Table */}
       <Card>
         <CardHeader>
@@ -498,7 +628,7 @@ export default function ContractsPage() {
                     <TableHead>Company</TableHead>
                     <TableHead>Residence</TableHead>
                     <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Rate/Month</TableHead>
+                    <TableHead className="text-right">الأجرة</TableHead>
                     <TableHead className="text-center">Workers</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -510,7 +640,12 @@ export default function ContractsPage() {
                     const residencesDisplay = getResidencesDisplay(contract);
                     const actualWorkers = getActualWorkers(contract);
                     const invoices = getInvoicesByContract(contract.id);
-                    
+                    // السعر هو ما يقرّر المبلغ المُصدَر، فيُعرض الخلل عند الرقم
+                    // نفسه لا في تنبيه عام أعلى الصفحة.
+                    const rateFlag = contractFlags[contract.id]?.find(
+                      f => f.kind === 'unresolved_rate_unit' || f.kind === 'yearly_rate_in_monthly_field' || f.kind === 'zero_rate'
+                    );
+
                     return (
                       <TableRow key={contract.id}>
                         <TableCell>
@@ -546,7 +681,27 @@ export default function ContractsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {contract.ratePerPersonPerMonth.toFixed(2)} SAR
+                          <div className="flex flex-col items-end gap-1">
+                            <span className={rateFlag ? 'text-destructive' : undefined}>
+                              {contract.ratePerPersonPerMonth.toFixed(2)} SAR
+                              <span className="text-[11px] font-normal text-muted-foreground">
+                                {contract.rateUnit === 'daily'
+                                  ? ' / يوم'
+                                  : contract.rateUnit === 'monthly'
+                                    ? ' / شهر'
+                                    : ''}
+                              </span>
+                            </span>
+                            {rateFlag && (
+                              <span
+                                className="text-[11px] font-normal text-destructive flex items-center gap-1 text-right"
+                                title={rateFlag.messageAr}
+                              >
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                <span dir="rtl">الوحدة غير محدَّدة</span>
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="text-sm">

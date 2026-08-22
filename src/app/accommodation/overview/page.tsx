@@ -18,23 +18,28 @@ export default function AccommodationOverviewPage() {
   const { currentUser } = useUsers();
   const [quotaRetryUntil, setQuotaRetryUntil] = useState<number | null>(null);
   
+  // A refresh can resolve from cache without moving `lastUpdated`, so the stale
+  // check stays true and would re-trigger this effect forever. Attempt at most
+  // one refresh per residences count instead.
+  const refreshedForResidenceCount = React.useRef<number | null>(null);
+
   useEffect(() => {
-    const init = async () => {
-        // Refresh if no stats, or stale (older than 30 minutes), OR if we have stats but residence occupancy is empty while we have residences
-        const isStale = !dashboardStats || (Date.now() - dashboardStats.lastUpdated > 1800000);
-        const missingResidenceData = dashboardStats && residences.length > 0 && Object.keys(dashboardStats.residenceOccupancy).length === 0;
-        
-        if (isStale || missingResidenceData) {
-            await refreshDashboardStats();
-        }
-        
-        // Run auto-archive cleanup in background (Admins only)
-        if (currentUser?.role === 'Admin') {
-          autoArchiveOccupants().catch(e => console.error("Auto-archive failed:", e));
-        }
-    };
-    init();
-  }, [refreshDashboardStats, dashboardStats, residences.length, autoArchiveOccupants, currentUser]);
+    // Refresh if no stats, or stale (older than 30 minutes), OR if we have stats but residence occupancy is empty while we have residences
+    const isStale = !dashboardStats || (Date.now() - dashboardStats.lastUpdated > 1800000);
+    const missingResidenceData = !!dashboardStats && residences.length > 0 && Object.keys(dashboardStats.residenceOccupancy).length === 0;
+
+    if (!isStale && !missingResidenceData) return;
+    if (refreshedForResidenceCount.current === residences.length) return;
+
+    refreshedForResidenceCount.current = residences.length;
+    refreshDashboardStats().catch(e => console.error("Dashboard refresh failed:", e));
+  }, [refreshDashboardStats, dashboardStats, residences.length]);
+
+  // Run auto-archive cleanup in background (Admins only)
+  useEffect(() => {
+    if (currentUser?.role !== 'Admin') return;
+    autoArchiveOccupants().catch(e => console.error("Auto-archive failed:", e));
+  }, [currentUser?.role, autoArchiveOccupants]);
 
   // Detect Firestore quota backoff window set by refreshDashboardStats
   useEffect(() => {

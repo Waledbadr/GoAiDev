@@ -26,11 +26,13 @@ import {
 import Link from 'next/link';
 import { formatHijriSubtext } from '@/lib/hijri-date-utils';
 import { ContractWizardDialog } from '@/components/contracts/ContractWizardDialog';
+import { MigrationPreviewDialog } from '@/components/contracts/MigrationPreviewDialog';
 import {
   type Contract, type ContractFormData, type ContractType, type ContractStatus,
   type BillingType, type ContractService, type PartyType, type RenewalType,
   CONTRACT_TYPES, getContractTypeInfo, getContractCategoryLabel,
-  getContractStatusLabel, getBillingTypeLabel, getRenewalTypeLabel, formatSAR
+  getContractStatusLabel, getBillingTypeLabel, getRenewalTypeLabel, formatSAR,
+  getMonthlyValue
 } from '@/types/contracts';
 
 // ---- Icons Map ----
@@ -52,6 +54,7 @@ export default function ContractsPage() {
     renewContract, suspendContract, cancelContract, activateContract,
     generateMonthlyInvoices, getInvoicesByContract,
     searchContracts, filterContracts, checkExpiringContracts,
+    reconcileContractLifecycle,
   } = useContracts();
   const { companies, residences } = useAccommodation();
   const { locale, dict: t } = useLanguage();
@@ -77,6 +80,7 @@ export default function ContractsPage() {
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
+  const [showMigration, setShowMigration] = useState(false);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -172,9 +176,11 @@ export default function ContractsPage() {
     return Object.entries(groups).map(([ownerName, ownerContracts]) => ({
       ownerName,
       contracts: ownerContracts,
-      totalValue: ownerContracts.reduce((sum, item) => sum + (item.billingRate || 0), 0),
-      activeCount: ownerContracts.filter(item => item.status === 'Active' || item.status === 'active').length,
-      expiredCount: ownerContracts.filter(item => item.status === 'Expired' || item.status === 'expired').length,
+      // `billingRate` وحده يخلط سعر الفرد بإيجار مبنى كامل، فتُطبَّع كل الأنواع
+      // إلى مكافئ شهري كما في إحصائيات الصفحة.
+      totalValue: ownerContracts.reduce((sum, item) => sum + getMonthlyValue(item).amount, 0),
+      activeCount: ownerContracts.filter(item => item.status === 'Active').length,
+      expiredCount: ownerContracts.filter(item => item.status === 'Expired').length,
       partyType: ownerContracts[0]?.partyType || 'company',
     }));
   }, [filteredContracts, isAr]);
@@ -361,7 +367,16 @@ export default function ContractsPage() {
             </div>
             <TrendingUp className="h-8 w-8 text-emerald-200" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">{c.sarPerMonth || 'SAR / month'}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {c.sarPerMonth || 'SAR / month'}
+            {stats.estimatedMonthlyRevenue > 0 && (
+              <span className="block text-amber-600 dark:text-amber-400">
+                {isAr
+                  ? `منها ${formatSAR(stats.estimatedMonthlyRevenue)} تقديري (عقود بالفرد)`
+                  : `incl. ${formatSAR(stats.estimatedMonthlyRevenue)} estimated (per-person)`}
+              </span>
+            )}
+          </p>
         </CardContent>
       </Card>
 
@@ -378,7 +393,16 @@ export default function ContractsPage() {
             </div>
             <TrendingDown className="h-8 w-8 text-rose-200" />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">{c.sarPerMonth || 'SAR / month'}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {c.sarPerMonth || 'SAR / month'}
+            {stats.unvaluedContracts > 0 && (
+              <span className="block text-amber-600 dark:text-amber-400">
+                {isAr
+                  ? `${stats.unvaluedContracts} عقد نشط بلا قيمة شهرية ثابتة (لمرة واحدة / حسب الفاتورة)`
+                  : `${stats.unvaluedContracts} active contract(s) with no fixed monthly value`}
+              </span>
+            )}
+          </p>
         </CardContent>
       </Card>
 
@@ -754,51 +778,84 @@ export default function ContractsPage() {
     );
   };
 
+  // شريط التبديل والإجراءات. كان مرسوماً داخل عرض الجدول فقط، فيختفي بمجرد
+  // الانتقال إلى «تجميع حسب المالك» ولا يبقى سبيل للعودة إلا بإعادة تحميل
+  // الصفحة. مشترك الآن بين العرضين.
+  const ListToolbar = () => (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <CardTitle className="text-lg">{c.contractList || 'Contract List'}</CardTitle>
+        <div className="flex items-center bg-muted p-1 rounded-lg border text-xs">
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            aria-pressed={viewMode === 'table'}
+            className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+              viewMode === 'table' ? 'bg-background text-foreground shadow-xs font-bold' : 'text-muted-foreground'
+            }`}
+          >
+            📋 {isAr ? 'جدول العقود' : 'Table'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('grouped_by_owner')}
+            aria-pressed={viewMode === 'grouped_by_owner'}
+            className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+              viewMode === 'grouped_by_owner' ? 'bg-background text-foreground shadow-xs font-bold' : 'text-muted-foreground'
+            }`}
+          >
+            🏢 {isAr ? 'تجميع حسب المالك (قابل للطي)' : 'By Owner'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => generateMonthlyInvoices()}>
+          <RefreshCw className="h-4 w-4 ml-1" />
+          {c.generateMonthlyInvoices || 'Generate Monthly Invoices'}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => checkExpiringContracts()}>
+          <AlertTriangle className="h-4 w-4 ml-1" />
+          {c.checkAlerts || 'Check Alerts'}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => reconcileContractLifecycle()}
+          title={isAr
+            ? 'يجدّد العقود المضبوطة على التجديد التلقائي، ويثبّت حالة «منتهٍ» لما تجاوز مدته.'
+            : 'Renews auto-renew contracts and persists Expired status for the rest.'}
+        >
+          <Clock className="h-4 w-4 ml-1" />
+          {isAr ? 'تحديث دورة الحياة' : 'Reconcile Lifecycle'}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowMigration(true)}>
+          <Layers className="h-4 w-4 ml-1" />
+          {isAr ? 'ترحيل العقود القديمة' : 'Migrate Legacy'}
+        </Button>
+      </div>
+    </div>
+  );
+
   // ---- Contracts Table ----
   const ContractsTable = () => {
     if (viewMode === 'grouped_by_owner') {
-      return <GroupedByOwnerView />;
+      return (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <ListToolbar />
+            </CardHeader>
+          </Card>
+          <GroupedByOwnerView />
+        </div>
+      );
     }
 
     return (
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <CardTitle className="text-lg">{c.contractList || 'Contract List'}</CardTitle>
-              <div className="flex items-center bg-muted p-1 rounded-lg border text-xs">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    viewMode === 'table' ? 'bg-background text-foreground shadow-xs font-bold' : 'text-muted-foreground'
-                  }`}
-                >
-                  📋 {isAr ? 'جدول العقود' : 'Table'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grouped_by_owner')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                    viewMode === 'grouped_by_owner' ? 'bg-background text-foreground shadow-xs font-bold' : 'text-muted-foreground'
-                  }`}
-                >
-                  🏢 {isAr ? 'تجميع حسب المالك (قابل للطي)' : 'By Owner'}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => generateMonthlyInvoices()}>
-                <RefreshCw className="h-4 w-4 ml-1" />
-                {c.generateMonthlyInvoices || 'Generate Monthly Invoices'}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => checkExpiringContracts()}>
-                <AlertTriangle className="h-4 w-4 ml-1" />
-                {c.checkAlerts || 'Check Alerts'}
-              </Button>
-            </div>
-          </div>
+          <ListToolbar />
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -1098,11 +1155,11 @@ export default function ContractsPage() {
       selectedContract={selectedContract}
       companies={companies}
       residences={residences}
-      onSubmit={async (newFormData) => {
+      onSubmit={async (newFormData, status) => {
         if (dialogMode === 'edit' && selectedContract) {
           await updateContract(selectedContract.id, newFormData as any);
         } else {
-          await createContract(newFormData);
+          await createContract(newFormData, status);
         }
         setDialogMode(null);
         setSelectedContract(null);
@@ -1457,6 +1514,7 @@ export default function ContractsPage() {
       <RenewDialog />
       <DeleteDialog />
       <ConfirmActionDialog />
+      <MigrationPreviewDialog open={showMigration} onOpenChange={setShowMigration} />
     </div>
   );
 }

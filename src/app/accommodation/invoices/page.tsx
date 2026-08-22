@@ -792,8 +792,13 @@ export default function InvoicesPage() {
                     <div className="font-medium">{selectedInvoice.numberOfWorkers}</div>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Rate per Person/Month</Label>
-                    <div className="font-medium">{selectedInvoice.ratePerPerson.toFixed(2)} SAR</div>
+                    {/* الفاتورة تخزّن مكافئاً شهرياً للأجرة؛ يُعرض معه ما يقابله
+                        يومياً، فذلك هو ما تُحسب عليه أيام الإشغال فعلاً. */}
+                    <Label className="text-muted-foreground">أجرة الفرد</Label>
+                    <div className="font-medium">
+                      {(selectedInvoice.ratePerPerson / 30).toFixed(2)} SAR
+                      <span className="text-xs text-muted-foreground"> / يوم</span>
+                    </div>
                   </div>
                 </div>
 

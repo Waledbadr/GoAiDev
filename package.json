@@ -22,7 +22,9 @@
     "keep-alive": "node scripts/keep-alive.mjs",
     "lookup:uid": "node --env-file=.env.local scripts/lookup-uid.mjs",
     "update:room-areas": "node --env-file=.env.local scripts/update-rooms-default-area.mjs",
-    "export:d1": "node scripts/export-firestore-to-d1.mjs"
+    "export:d1": "node scripts/export-firestore-to-d1.mjs",
+    "verify:billing": "tsx scripts/verify-billing-engine.mts",
+    "migrate:contracts": "tsx scripts/migrate-contracts-to-v2.mts"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",

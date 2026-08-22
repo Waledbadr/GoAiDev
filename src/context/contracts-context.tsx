@@ -1,8 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useCallback, useState, useEffect } from "react";
-import { db } from '@/lib/firebase';
+import { db as maybeDb } from '@/lib/firebase';
 import {
+  type Firestore,
   collection,
   doc,
   setDoc,
@@ -20,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import { auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { isOccupancyBilled } from '@/lib/billing-engine';
 import {
   type Contract,
   type ContractInvoice,
@@ -31,7 +33,21 @@ import {
   CONTRACT_TYPES,
   getContractTypeInfo,
   getEffectiveContractStatus,
+  getMonthlyValue,
+  TRACKED_CONTRACT_FIELDS,
+  type ContractChange,
+  type ContractChangeAction,
+  type ContractFieldChange,
 } from '@/types/contracts';
+
+/**
+ * `db` مُصدَّر بنوع `Firestore | null` لأنه يبقى null على الخادم وحين ينقص
+ * إعداد Firebase. كل ما في هذا الملف إما مستمع داخل `useEffect` أو دالة تُستدعى
+ * من تفاعل المستخدم — ولا يعمل أيّ منهما إلا في المتصفح بعد التهيئة. تضييق
+ * النوع مرة واحدة هنا أوضح من `db!` مكرّرة عند اثنين وعشرين موضعاً، وكانت تلك
+ * الأخطاء تُخفي أخطاء نوع حقيقية في نفس الملف.
+ */
+const db = maybeDb as Firestore;
 
 // ---- Interface for Context ----
 interface ContractsContextType {
@@ -43,9 +59,15 @@ interface ContractsContextType {
   stats: ContractStats;
 
   // دوال العقود
-  createContract: (data: ContractFormData) => Promise<string>;
+  createContract: (data: ContractFormData, status?: ContractStatus) => Promise<string>;
   updateContract: (id: string, data: Partial<Contract>) => Promise<void>;
-  deleteContract: (id: string) => Promise<void>;
+  /** يؤرشف العقد — لا يحذفه. الاسم محفوظ للتوافق مع الشاشات القائمة. */
+  deleteContract: (id: string, reason?: string) => Promise<void>;
+  archiveContract: (id: string, reason?: string) => Promise<void>;
+  /** حذف نهائي مع كل الفواتير والتنبيهات. لا رجعة فيه. */
+  purgeContract: (id: string) => Promise<void>;
+  contractHistory: ContractChange[];
+  loadContractHistory: (contractId: string) => Promise<ContractChange[]>;
   getContract: (id: string) => Contract | undefined;
   getContractsByType: (type: ContractType) => Contract[];
   getContractsByStatus: (status: ContractStatus) => Contract[];
@@ -65,6 +87,8 @@ interface ContractsContextType {
 
   // دوال التنبيهات
   checkExpiringContracts: () => Promise<void>;
+  /** يثبّت الانتهاء وينفّذ التجديد التلقائي. آمن عند التكرار. */
+  reconcileContractLifecycle: () => Promise<{ renewed: number; expired: number }>;
   getAlertsByContract: (contractId: string) => ContractAlert[];
   markAlertAsRead: (alertId: string) => Promise<void>;
 
@@ -104,6 +128,76 @@ function fromTimestamp(ts: any): string {
   return String(ts).split('T')[0];
 }
 
+/**
+ * الفروق بين حالتين للعقد، مقصورة على الحقول المتتبَّعة.
+ * المصفوفات تُقارن بعد الترتيب: إعادة ترتيب السكنات ليست تغييراً.
+ */
+function diffTrackedFields(
+  before: Partial<Contract> | undefined,
+  after: Partial<Contract>
+): ContractFieldChange[] {
+  if (!before) return [];
+  const changes: ContractFieldChange[] = [];
+
+  for (const field of TRACKED_CONTRACT_FIELDS) {
+    if (!(field in after)) continue;
+
+    const rawBefore = (before as Record<string, unknown>)[field];
+    const rawAfter = (after as Record<string, unknown>)[field];
+
+    const norm = (v: unknown) =>
+      Array.isArray(v) ? [...v].sort().join(',') : v === undefined ? null : (v as string | number | boolean | null);
+
+    const b = norm(rawBefore);
+    const a = norm(rawAfter);
+    if (b === a) continue;
+
+    changes.push({ field, before: b, after: a });
+  }
+
+  return changes;
+}
+
+/**
+ * تاريخ النهاية بعد تجديد تلقائي واحد، محسوباً من نهاية المدة الحالية لا من
+ * اليوم — وإلا ضاعت الأيام بين الانتهاء وموعد تشغيل الدورة.
+ */
+function nextRenewalEndDate(contract: Contract): string | null {
+  if (!contract.endDate) return null;
+  const end = new Date(contract.endDate);
+  if (isNaN(end.getTime())) return null;
+
+  const addMonths = (n: number) => {
+    const d = new Date(end);
+    d.setMonth(d.getMonth() + n);
+    return d.toISOString().split('T')[0];
+  };
+
+  switch (contract.renewalType) {
+    case 'auto_monthly':   return addMonths(1);
+    case 'auto_quarterly': return addMonths(3);
+    case 'auto_yearly':    return addMonths(12);
+    case 'auto_same_duration': {
+      const months = contract.durationMonths
+        ?? monthsBetween(contract.startDate, contract.endDate, contract.isOpenEnded);
+      return months ? addMonths(months) : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** مدة العقد بالأشهر، تُحفظ مع العقد بدل إعادة حسابها في كل شاشة. */
+function monthsBetween(startDate: string, endDate: string, isOpenEnded?: boolean): number | undefined {
+  if (isOpenEnded || !startDate || !endDate) return undefined;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return undefined;
+  const months =
+    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  return months > 0 ? months : undefined;
+}
+
 function toTimestamp(dateStr: string): Timestamp {
   if (!dateStr) return Timestamp.now();
   const d = new Date(dateStr);
@@ -115,6 +209,8 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<ContractInvoice[]>([]);
   const [alerts, setAlerts] = useState<ContractAlert[]>([]);
+  // سجل التغييرات يُحمَّل عند الطلب لعقد واحد، لا كمستمع دائم على كل التاريخ.
+  const [contractHistory, setContractHistory] = useState<ContractChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<ContractStats>({
     totalContracts: 0,
@@ -124,6 +220,9 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     draftContracts: 0,
     totalMonthlyRevenue: 0,
     totalMonthlyExpense: 0,
+    estimatedMonthlyRevenue: 0,
+    estimatedMonthlyExpense: 0,
+    unvaluedContracts: 0,
     expiringThisMonth: 0,
     expiringNextMonth: 0,
     contractsByType: {} as Record<ContractType, number>,
@@ -139,7 +238,11 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onSnapshot(q,
       (snapshot) => {
-        const contractList: Contract[] = snapshot.docs.map(doc => {
+        const contractList: Contract[] = snapshot.docs
+          // العقود المؤرشفة تبقى في Firestore مرجعاً لفواتيرها، وتُستبعد من كل
+          // القوائم والإحصائيات.
+          .filter(doc => !doc.data().archivedAt)
+          .map(doc => {
           const data = doc.data();
           const contractItem = {
             id: doc.id,
@@ -194,6 +297,33 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // ---- Real-time listener for alerts ----
+  // بدون هذا المستمع كانت `alerts` تبقى مصفوفة فارغة إلى الأبد: الدالة
+  // checkExpiringContracts تكتب التنبيهات في Firestore ولا يقرؤها أحد.
+  useEffect(() => {
+    const q = query(collection(db, 'contractAlerts'), orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const alertList: ContractAlert[] = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: fromTimestamp(data.createdAt),
+            sentAt: data.sentAt ? fromTimestamp(data.sentAt) : undefined,
+          } as ContractAlert;
+        });
+        setAlerts(alertList);
+      },
+      (error) => {
+        console.error('Error fetching contract alerts:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   // ---- حساب الإحصائيات ----
   const calculateStats = useCallback(() => {
     const now = new Date();
@@ -220,17 +350,29 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     }).length;
 
     // القيم الشهرية
+    // تُطبَّع كل أنواع الفوترة إلى مكافئ شهري بدل جمع `billingRate` كما هو،
+    // وتُحصى العقود التي تعذّر تقدير قيمتها حتى لا يبدو الإجمالي أدق مما هو.
     let totalMonthlyRevenue = 0;
     let totalMonthlyExpense = 0;
+    let estimatedMonthlyRevenue = 0;
+    let estimatedMonthlyExpense = 0;
+    let unvaluedContracts = 0;
 
     active.forEach(c => {
       const info = getContractTypeInfo(c.contractType);
-      if (c.billingType === 'fixed_monthly' || c.billingType === 'per_person_per_month') {
-        if (info.category === 'revenue') {
-          totalMonthlyRevenue += c.billingRate;
-        } else {
-          totalMonthlyExpense += c.billingRate;
-        }
+      const { amount, basis } = getMonthlyValue(c);
+
+      if (basis === 'unknown') {
+        unvaluedContracts++;
+        return;
+      }
+
+      if (info.category === 'revenue') {
+        totalMonthlyRevenue += amount;
+        if (basis === 'estimated') estimatedMonthlyRevenue += amount;
+      } else {
+        totalMonthlyExpense += amount;
+        if (basis === 'estimated') estimatedMonthlyExpense += amount;
       }
     });
 
@@ -252,6 +394,9 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
       draftContracts: drafts.length,
       totalMonthlyRevenue,
       totalMonthlyExpense,
+      estimatedMonthlyRevenue,
+      estimatedMonthlyExpense,
+      unvaluedContracts,
       expiringThisMonth,
       expiringNextMonth,
       contractsByType,
@@ -266,19 +411,84 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
   // ---- دوال العقود ----
 
-  const createContract = useCallback(async (data: ContractFormData): Promise<string> => {
+  const loadContractHistory = useCallback(async (contractId: string): Promise<ContractChange[]> => {
     try {
+      const snap = await getDocs(query(
+        collection(db, 'contractHistory'),
+        where('contractId', '==', contractId)
+      ));
+      const list: ContractChange[] = snap.docs
+        .map(d => {
+          const data = d.data();
+          return { id: d.id, ...data, at: fromTimestamp(data.at) } as ContractChange;
+        })
+        // الترتيب في الذاكرة يتجنّب فهرساً مركّباً على (contractId, at).
+        .sort((a, b) => (a.at < b.at ? 1 : -1));
+      setContractHistory(list);
+      return list;
+    } catch (error) {
+      console.error('Failed to load contract history:', error);
+      return [];
+    }
+  }, []);
+
+  /**
+   * قيد في سجل التغييرات. لا يُفشل العملية الأصلية إن تعذّرت الكتابة: فقدان
+   * قيد في السجل أهون من رفض تعديل مشروع على العقد.
+   */
+  const recordChange = useCallback(async (
+    contractId: string,
+    action: ContractChangeAction,
+    changes: ContractFieldChange[],
+    note?: string
+  ) => {
+    try {
+      await addDoc(collection(db, 'contractHistory'), {
+        contractId,
+        action,
+        changes,
+        byUid: auth?.currentUser?.uid || null,
+        at: Timestamp.now(),
+        ...(note ? { note } : {}),
+      });
+    } catch (error) {
+      console.error('Failed to record contract change:', error);
+    }
+  }, []);
+
+  const createContract = useCallback(async (data: ContractFormData, status: ContractStatus = 'Active'): Promise<string> => {
+    try {
+      const vatPercentage = data.vatPercentage ?? 0;
+      const vatAmount = ((data.billingRate || 0) * vatPercentage) / 100;
+
       const contractData = {
         ...data,
+        // التواريخ تُحفظ Timestamp مثلما تفعل updateContract. كانت تُكتب نصاً هنا
+        // فينتهي نفس الحقل بنوعين مختلفين حسب طريقة إنشاء المستند، وهو ما يكسر
+        // أي استعلام نطاق على التاريخ من الخادم.
+        startDate: toTimestamp(data.startDate),
+        endDate: data.isOpenEnded ? null : toTimestamp(data.endDate),
+        // القيم المحسوبة تُحفظ مع العقد: الواجهة تعرضها للمستخدم قبل الحفظ،
+        // فلا يجوز أن تختفي بعده وتُعاد اشتقاقها في كل شاشة على حدة.
+        vatPercentage,
+        vatAmount,
+        totalAmount: (data.billingRate || 0) + vatAmount,
+        durationMonths: monthsBetween(data.startDate, data.endDate, data.isOpenEnded),
         renewalCount: 0,
-        status: 'Active' as ContractStatus,
+        status,
         linkedResidenceNames: [],
+        createdBy: auth?.currentUser?.uid || null,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       };
 
       const docRef = await addDoc(collection(db, 'contractsV2'), contractData);
-      
+
+      await recordChange(docRef.id, 'created', [
+        { field: 'billingRate', before: null, after: data.billingRate ?? 0 },
+        { field: 'status', before: null, after: status },
+      ]);
+
       toast({
         title: 'تم إنشاء العقد',
         description: 'تم إنشاء العقد بنجاح',
@@ -294,17 +504,41 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
       });
       throw error;
     }
-  }, [toast]);
+  }, [recordChange, toast]);
 
   const updateContract = useCallback(async (id: string, data: Partial<Contract>) => {
     try {
-      const updateData = { ...data, updatedAt: Timestamp.now() };
+      const updateData: Record<string, unknown> = { ...data, updatedAt: Timestamp.now() };
       // تحويل التواريخ
       if (data.startDate) updateData.startDate = toTimestamp(data.startDate);
       if (data.endDate) updateData.endDate = toTimestamp(data.endDate);
 
+      // إعادة اشتقاق الضريبة والإجمالي عند تغيّر أي من طرفَي المعادلة، وإلا بقيت
+      // القيم المحفوظة تعكس السعر القديم بعد تعديل السعر.
+      if (data.billingRate !== undefined || data.vatPercentage !== undefined) {
+        const existing = contracts.find(c => c.id === id);
+        const rate = data.billingRate ?? existing?.billingRate ?? 0;
+        const vatPct = data.vatPercentage ?? existing?.vatPercentage ?? 0;
+        const vatAmount = (rate * vatPct) / 100;
+        updateData.vatAmount = vatAmount;
+        updateData.totalAmount = rate + vatAmount;
+      }
+
+      if (data.startDate || data.endDate || data.isOpenEnded !== undefined) {
+        const existing = contracts.find(c => c.id === id);
+        const months = monthsBetween(
+          data.startDate ?? existing?.startDate ?? '',
+          data.endDate ?? existing?.endDate ?? '',
+          data.isOpenEnded ?? existing?.isOpenEnded
+        );
+        if (months !== undefined) updateData.durationMonths = months;
+      }
+
       await updateDoc(doc(db, 'contractsV2', id), updateData);
-      
+
+      const changes = diffTrackedFields(contracts.find(c => c.id === id), data);
+      if (changes.length > 0) await recordChange(id, 'updated', changes);
+
       toast({
         title: 'تم تحديث العقد',
         description: 'تم تحديث العقد بنجاح',
@@ -317,12 +551,49 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         variant: 'destructive',
       });
     }
-  }, [toast]);
+  }, [contracts, recordChange, toast]);
 
-  const deleteContract = useCallback(async (id: string) => {
+  /**
+   * أرشفة العقد بدل حذفه.
+   *
+   * كانت هذه الدالة تمحو العقد ثم تمحو كل فواتيره وتنبيهاته دفعةً واحدة. فاتورة
+   * صادرة لطرف آخر سجلٌّ محاسبي لا يجوز أن يختفي بضغطة زر — الأرشفة تُخفي العقد
+   * من القوائم وتُبقي كل ما يشير إليه سليماً.
+   */
+  const archiveContract = useCallback(async (id: string, reason?: string) => {
+    try {
+      await updateDoc(doc(db, 'contractsV2', id), {
+        archivedAt: Timestamp.now(),
+        archivedBy: auth?.currentUser?.uid || null,
+        archiveReason: reason || null,
+        updatedAt: Timestamp.now(),
+      });
+
+      await recordChange(id, 'archived', [{ field: 'archivedAt', before: null, after: 'archived' }], reason);
+
+      toast({
+        title: 'تمت أرشفة العقد',
+        description: 'أُخفي العقد من القوائم، وفواتيره وتنبيهاته محفوظة كما هي.',
+      });
+    } catch (error) {
+      console.error('Error archiving contract:', error);
+      toast({
+        title: 'خطأ',
+        description: 'حدث خطأ أثناء أرشفة العقد',
+        variant: 'destructive',
+      });
+    }
+  }, [recordChange, toast]);
+
+  /**
+   * الحذف النهائي للعقد وكل ما يتبعه. مسار منفصل ومقصود، لا يُستدعى من زر
+   * «حذف» في القائمة — استخدمه فقط لإزالة بيانات أُدخلت بالخطأ ولم تُصدر منها
+   * أي فاتورة حقيقية.
+   */
+  const purgeContract = useCallback(async (id: string) => {
     try {
       await deleteDoc(doc(db, 'contractsV2', id));
-      
+
       // حذف الفواتير المرتبطة
       const invoicesQuery = query(collection(db, 'contractInvoices'), where('contractId', '==', id));
       const invoicesSnapshot = await getDocs(invoicesQuery);
@@ -342,18 +613,21 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
       await batch2.commit();
 
       toast({
-        title: 'تم حذف العقد',
-        description: 'تم حذف العقد وجميع البيانات المرتبطة به',
+        title: 'تم حذف العقد نهائياً',
+        description: 'حُذف العقد وجميع فواتيره وتنبيهاته. لا يمكن التراجع.',
       });
     } catch (error) {
-      console.error('Error deleting contract:', error);
+      console.error('Error purging contract:', error);
       toast({
         title: 'خطأ',
-        description: 'حدث خطأ أثناء حذف العقد',
+        description: 'حدث خطأ أثناء الحذف النهائي',
         variant: 'destructive',
       });
     }
   }, [toast]);
+
+  // زر «حذف» في الواجهة يؤرشف. الاسم محفوظ للتوافق مع الشاشات القائمة.
+  const deleteContract = archiveContract;
 
   const getContract = useCallback((id: string): Contract | undefined => {
     return contracts.find(c => c.id === id);
@@ -388,6 +662,11 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         updatedAt: Timestamp.now(),
       });
 
+      await recordChange(id, 'renewed', [
+        { field: 'endDate', before: contract.endDate ?? null, after: newEndDate },
+        { field: 'status', before: contract.status ?? null, after: 'Active' },
+      ]);
+
       toast({
         title: 'تم تجديد العقد',
         description: `تم تجديد العقد حتى ${newEndDate}`,
@@ -400,46 +679,52 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         variant: 'destructive',
       });
     }
-  }, [contracts, toast]);
+  }, [contracts, recordChange, toast]);
 
   const suspendContract = useCallback(async (id: string) => {
     try {
+      const previous = contracts.find(c => c.id === id)?.status ?? null;
       await updateDoc(doc(db, 'contractsV2', id), {
         status: 'Suspended',
         updatedAt: Timestamp.now(),
       });
+      await recordChange(id, 'suspended', [{ field: 'status', before: previous, after: 'Suspended' }]);
       toast({ title: 'تم إيقاف العقد', description: 'تم إيقاف العقد بنجاح' });
     } catch (error) {
       console.error('Error suspending contract:', error);
       toast({ title: 'خطأ', description: 'حدث خطأ أثناء إيقاف العقد', variant: 'destructive' });
     }
-  }, [toast]);
+  }, [contracts, recordChange, toast]);
 
   const cancelContract = useCallback(async (id: string) => {
     try {
+      const previous = contracts.find(c => c.id === id)?.status ?? null;
       await updateDoc(doc(db, 'contractsV2', id), {
         status: 'Cancelled',
         updatedAt: Timestamp.now(),
       });
+      await recordChange(id, 'cancelled', [{ field: 'status', before: previous, after: 'Cancelled' }]);
       toast({ title: 'تم إلغاء العقد', description: 'تم إلغاء العقد بنجاح' });
     } catch (error) {
       console.error('Error cancelling contract:', error);
       toast({ title: 'خطأ', description: 'حدث خطأ أثناء إلغاء العقد', variant: 'destructive' });
     }
-  }, [toast]);
+  }, [contracts, recordChange, toast]);
 
   const activateContract = useCallback(async (id: string) => {
     try {
+      const previous = contracts.find(c => c.id === id)?.status ?? null;
       await updateDoc(doc(db, 'contractsV2', id), {
         status: 'Active',
         updatedAt: Timestamp.now(),
       });
+      await recordChange(id, 'activated', [{ field: 'status', before: previous, after: 'Active' }]);
       toast({ title: 'تم تفعيل العقد', description: 'تم تفعيل العقد بنجاح' });
     } catch (error) {
       console.error('Error activating contract:', error);
       toast({ title: 'خطأ', description: 'حدث خطأ أثناء تفعيل العقد', variant: 'destructive' });
     }
-  }, [toast]);
+  }, [contracts, recordChange, toast]);
 
   // ---- دوال الفواتير ----
 
@@ -469,8 +754,19 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
       const activeContracts = contracts.filter(c => c.status === 'Active');
       let count = 0;
+      let skipped = 0;
 
       for (const contract of activeContracts) {
+        // Occupancy-billed contracts (per person, per day) cannot be invoiced
+        // from contract terms alone — the amount is days-housed times the rate,
+        // and this context holds no occupancy data. Billing them here produced
+        // an invoice for one day's rate for the whole month, so they are left
+        // to the occupancy billing run instead of being silently under-billed.
+        if (isOccupancyBilled(contract.contractType, contract.billingType)) {
+          skipped++;
+          continue;
+        }
+
         // التحقق من عدم وجود فاتورة لنفس الشهر
         const existingQuery = query(
           collection(db, 'contractInvoices'),
@@ -493,7 +789,9 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
       toast({
         title: 'تم إنشاء الفواتير',
-        description: `تم إنشاء ${count} فاتورة للشهر الحالي`,
+        description: skipped > 0
+          ? `تم إنشاء ${count} فاتورة. تم تخطي ${skipped} عقد تسكين (تُحسب من الإشغال).`
+          : `تم إنشاء ${count} فاتورة للشهر الحالي`,
       });
     } catch (error) {
       console.error('Error generating monthly invoices:', error);
@@ -521,6 +819,71 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
       toast({ title: 'خطأ', description: 'حدث خطأ أثناء تحديث الفاتورة', variant: 'destructive' });
     }
   }, [toast]);
+
+  /**
+   * تثبيت دورة حياة العقود.
+   *
+   * `getEffectiveContractStatus` تحسب «منتهٍ» في المتصفح وتكتبها فوق الحالة
+   * القادمة من Firestore، لكنها لا تُحفظ: العقد المنتهي يبقى `Active` في قاعدة
+   * البيانات، فأي استعلام من الخادم يراه نشطاً. وحقول `autoRenew` و
+   * `renewalType` تُحفظ ولا يقرؤها أحد، فـ«تجديد تلقائي» في الواجهة لم يكن
+   * يجدّد شيئاً.
+   *
+   * تمرّ هذه الدالة على العقود المنتهية فتمدّد ما هو تلقائي التجديد، وتثبّت
+   * حالة «منتهٍ» لما تبقّى. آمنة عند التكرار: العقد الذي عولج مرة لا يعود
+   * مؤهلاً في المرة التالية.
+   */
+  const reconcileContractLifecycle = useCallback(async (): Promise<{ renewed: number; expired: number }> => {
+    const summary = { renewed: 0, expired: 0 };
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    for (const contract of contracts) {
+      if (contract.isOpenEnded || !contract.endDate) continue;
+      if (contract.endDate >= todayStr) continue;
+      // الموقوف والملغى والمسودة خارج الدورة التلقائية: حالتها قرار بشري.
+      if (contract.status === 'Suspended' || contract.status === 'Cancelled' || contract.status === 'Draft') continue;
+
+      try {
+        if (contract.autoRenew && contract.renewalType !== 'manual') {
+          const newEndDate = nextRenewalEndDate(contract);
+          if (!newEndDate) continue;
+
+          await updateDoc(doc(db, 'contractsV2', contract.id), {
+            endDate: toTimestamp(newEndDate),
+            lastRenewedDate: Timestamp.now(),
+            renewalCount: (contract.renewalCount || 0) + 1,
+            status: 'Active',
+            updatedAt: Timestamp.now(),
+          });
+          await recordChange(contract.id, 'renewed', [
+            { field: 'endDate', before: contract.endDate, after: newEndDate },
+          ], 'تجديد تلقائي');
+          summary.renewed++;
+        } else {
+          await updateDoc(doc(db, 'contractsV2', contract.id), {
+            status: 'Expired',
+            updatedAt: Timestamp.now(),
+          });
+          await recordChange(contract.id, 'updated', [
+            { field: 'status', before: 'Active', after: 'Expired' },
+          ], 'انتهت المدة');
+          summary.expired++;
+        }
+      } catch (error) {
+        console.error(`Lifecycle reconcile failed for contract ${contract.id}:`, error);
+      }
+    }
+
+    if (summary.renewed > 0 || summary.expired > 0) {
+      toast({
+        title: 'تحديث دورة حياة العقود',
+        description: `جُدّد ${summary.renewed} عقد تلقائياً، وثُبّت انتهاء ${summary.expired} عقد.`,
+      });
+    }
+
+    return summary;
+  }, [contracts, recordChange, toast]);
 
   // ---- دوال التنبيهات ----
 
@@ -617,6 +980,10 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     createContract,
     updateContract,
     deleteContract,
+    archiveContract,
+    purgeContract,
+    contractHistory,
+    loadContractHistory,
     getContract,
     getContractsByType,
     getContractsByStatus,
@@ -632,6 +999,7 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     getInvoicesByMonth,
     updateInvoiceStatus,
     checkExpiringContracts,
+    reconcileContractLifecycle,
     getAlertsByContract,
     markAlertAsRead,
     calculateStats,

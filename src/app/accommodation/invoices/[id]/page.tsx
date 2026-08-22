@@ -6,6 +6,7 @@ import { useAccommodation, type Invoice, type AccommodationHistory } from '@/con
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Printer, Building2, Calendar, Users, DollarSign, FileText } from 'lucide-react';
 import { format, parseISO, differenceInDays, isWithinInterval, max, min, startOfDay, endOfDay } from 'date-fns';
+import { resolveDailyRate, NOMINAL_DAYS_PER_MONTH } from '@/lib/billing-engine';
 import { arSA, enUS } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -301,8 +302,13 @@ export default function InvoicePrintPage() {
       }
 
       if (days > 0) {
-        const rate = contract?.ratePerPersonPerMonth || invoice.ratePerPerson || 0;
-        const amount = (rate / 30) * days;
+        // الأجرة اليومية تُشتق من وحدة العقد، لا بقسمة ثابتة على ٣٠. العقد الذي
+        // أجرته يومية أصلاً كان يُعرض هنا بثلاثين ضعفاً أقل مما فُوتر به.
+        // الفاتورة الصادرة هي المرجع حين لا يقول العقد وحدته.
+        const contractDaily = contract ? resolveDailyRate(contract) : null;
+        const dailyRate = contractDaily
+          ?? (invoice.ratePerPerson ? invoice.ratePerPerson / NOMINAL_DAYS_PER_MONTH : 0);
+        const amount = dailyRate * days;
 
         // Calculate effective dates within the billing period
         const workerCheckIn = originalCheckIn ? new Date(originalCheckIn) : startDate;

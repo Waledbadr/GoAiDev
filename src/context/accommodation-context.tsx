@@ -8,6 +8,18 @@ import { useToast } from '@/hooks/use-toast';
 import { useNotifications } from '@/context/notifications-context';
 import { useUsers } from '@/context/users-context';
 import { getFiscalMonthPeriod } from '@/lib/fiscal-month-utils';
+import {
+  billResidence,
+  findWorkerIdsInResidence,
+  selectBillableWorkers,
+  type BillingPeriod,
+  type OccupancyContext,
+} from '@/lib/billing-engine';
+import {
+  collectOccupancyBillingSources,
+  type LegacyOccupancyContract,
+  type V2OccupancyContract,
+} from '@/lib/occupancy-billing-sources';
 import { differenceInDays, isWithinInterval, max, min, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { 
   validateCheckInDate,
@@ -180,7 +192,14 @@ export type Contract = {
   residenceIds?: string[]; // New: array of residence IDs, or ['all'] for all residences
   startDate: string; // ISO date
   endDate: string; // ISO date
+  /**
+   * مبلغ الأجرة للفرد. الاسم مضلّل: الوحدة الحقيقية يومية في أغلب العقود،
+   * ويحدّدها `rateUnit` لا اسم الحقل. أُبقي الاسم كما هو لأن كل المستندات
+   * القائمة في Firestore تستعمله؛ التسمية تُصحَّح مع الانتقال إلى contractsV2.
+   */
   ratePerPersonPerMonth: number;
+  /** وحدة المبلغ أعلاه. بدونها لا يُفوتَر العقد — القراءتان تفترقان ثلاثين ضعفاً. */
+  rateUnit?: "daily" | "monthly";
   expectedWorkers?: number;
   status: "Active" | "Expired" | "Cancelled";
   notes?: string;
@@ -453,11 +472,25 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
   const lastMutationTimeRef = useRef<number>(0); // Track last mutation time to prevent stale fetches
   const workersRef = useRef<Worker[]>([]);
   const isRefreshingRef = useRef(false); // Prevent concurrent dashboard refreshes
+  // Read inside refreshDashboardStats via refs so the callback identity stays
+  // stable; depending on these values directly recreates the callback on every
+  // stats update and re-triggers consumers' effects in a loop.
+  const dashboardStatsRef = useRef<DashboardStats | null>(null);
+  const residencesRef = useRef<Residence[]>([]);
 
   // Keep workersRef in sync
   useEffect(() => {
     workersRef.current = workers;
   }, [workers]);
+
+  // Keep dashboard/residences refs in sync
+  useEffect(() => {
+    dashboardStatsRef.current = dashboardStats;
+  }, [dashboardStats]);
+
+  useEffect(() => {
+    residencesRef.current = residences;
+  }, [residences]);
 
   const loadWorkersFromLocalStorage = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -2047,6 +2080,10 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
         startDate: contract.startDate,
         endDate: contract.endDate,
         ratePerPersonPerMonth: contract.ratePerPersonPerMonth,
+        // الوحدة تُحفظ صراحةً. العقود المحفوظة قبل وجود الحقل تصل هنا بلا قيمة،
+        // فيُحذف الحقل (ignoreUndefinedProperties) ويبقى العقد غير محسوم الوحدة
+        // — وهو التوصيف الصحيح لحاله، لا تخميناً عنه.
+        rateUnit: contract.rateUnit,
         expectedWorkers: contract.expectedWorkers,
         status: contract.status || 'Active',
         notes: contract.notes,
@@ -2131,6 +2168,25 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
   }
 
   // ============ INVOICE GENERATION ============
+  /**
+   * تواريخ `contractsV2` قد تكون Timestamp أو نصاً حسب طريقة إنشاء المستند.
+   * محرك الفوترة يقارنها كنصوص ISO، فتُطبَّع هنا قبل تمريرها.
+   */
+  function toDateString(value: unknown): string {
+    if (!value) return '';
+    if (typeof value === 'string') return value.split('T')[0];
+    if (typeof value === 'object' && value !== null) {
+      const ts = value as { toDate?: () => Date; seconds?: number };
+      if (typeof ts.toDate === 'function') {
+        try { return ts.toDate().toISOString().split('T')[0]; } catch { return ''; }
+      }
+      if (typeof ts.seconds === 'number') {
+        return new Date(ts.seconds * 1000).toISOString().split('T')[0];
+      }
+    }
+    return String(value).split('T')[0];
+  }
+
   async function generateMonthlyInvoices(month: string, customStartDay?: number, customRange?: { startDate: Date, endDate: Date }, filters?: { companyId?: string, residenceId?: string }, forceRegenerate?: boolean): Promise<{ generated: number; errors: number }> {
     // month format: YYYY-MM
     const result = { generated: 0, errors: 0 };
@@ -2153,6 +2209,10 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
       // 2. Get History for the period
       const periodHistory = getHistoryByDateRange(startDate.toISOString(), endDate.toISOString());
 
+      // Everything the billing engine reads about who was where, and when.
+      const period: BillingPeriod = { startDate, endDate };
+      const occupancyContext: OccupancyContext = { occupancy: occupants, movements: periodHistory };
+
       // 3. Pre-load workers for all occupants to avoid empty workers array
       const allOccupantWorkerIds = new Set<string>();
       occupants.forEach(occ => allOccupantWorkerIds.add(occ.workerId));
@@ -2171,29 +2231,68 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
         console.log(`[Invoice Generation] Workers available for billing: ${availableWorkers.length}`);
       }
 
-      // Find all active contracts for this month
-      let activeContracts = contracts.filter(c => {
-        if (c.status !== 'Active') return false;
-        const contractStart = new Date(c.startDate);
-        const contractEnd = new Date(c.endDate);
-        // Contract must overlap with fiscal period
-        return contractStart < endDate && contractEnd > startDate;
+      // Contracts come from BOTH collections. The run used to read the legacy
+      // `contracts` only, so anything created in the new contracts screen was
+      // never invoiced. contractsV2 is fetched once per run rather than kept in
+      // a listener: billing is occasional, and a standing listener on it would
+      // cost reads on every page of the app.
+      let v2Contracts: V2OccupancyContract[] = [];
+      try {
+        const v2Snapshot = await getDocs(collection(db, 'contractsV2'));
+        v2Contracts = v2Snapshot.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            startDate: toDateString(data.startDate),
+            endDate: toDateString(data.endDate),
+          } as V2OccupancyContract;
+        });
+      } catch (e) {
+        // A failure here must not silently halve the billing run.
+        console.error('[Invoice Generation] Failed to read contractsV2:', e);
+        toast({
+          title: 'تعذّر قراءة عقود النظام الجديد',
+          description: 'أُصدرت الفواتير من العقود القديمة فقط. راجع الصلاحيات ثم أعد التشغيل.',
+          variant: 'destructive',
+        });
+      }
+
+      const collected = collectOccupancyBillingSources({
+        legacyContracts: contracts as unknown as LegacyOccupancyContract[],
+        v2Contracts,
+        allResidenceIds: residencesRef.current.map(r => r.id),
+        period,
       });
+      let billingSources = collected.sources;
+
+      // عقود لم تُحسم وحدة أجرتها (يومية أم شهرية). لا تُفوتَر بالتخمين: الفارق
+      // ثلاثون ضعفاً، وفاتورة بمبلغ خاطئ أسوأ من غياب الفاتورة.
+      if (collected.unbillable.length > 0) {
+        console.warn('[Invoice Generation] Skipped contracts with unresolved rate unit:',
+          collected.unbillable.map(u => u.contractId));
+        toast({
+          title: `${collected.unbillable.length} عقد بلا فاتورة`,
+          description: 'لم تُحدَّد وحدة الأجرة (يومية أم شهرية). حدّدها من شاشة عقود السكن ثم أعد الإصدار.',
+          variant: 'destructive',
+        });
+      }
 
       // Apply company filter if specified
       if (filters?.companyId && filters.companyId !== 'all') {
-        activeContracts = activeContracts.filter(c => c.companyId === filters.companyId);
-        console.log(`[Invoice Generation] Filtered to company ${filters.companyId}: ${activeContracts.length} contracts`);
+        billingSources = billingSources.filter(src => src.terms.companyId === filters.companyId);
+        console.log(`[Invoice Generation] Filtered to company ${filters.companyId}: ${billingSources.length} contracts`);
       }
 
-      console.log(`[Invoice Generation] Found ${activeContracts.length} active contracts for period ${startDate.toISOString()} - ${endDate.toISOString()}`);
+      const fromV2 = billingSources.filter(src => src.source === 'v2').length;
+      console.log(`[Invoice Generation] Found ${billingSources.length} billable contracts (${fromV2} from contractsV2) for period ${startDate.toISOString()} - ${endDate.toISOString()}`);
       console.log(`[Invoice Generation] Total occupants in system: ${occupants.length}`);
       console.log(`[Invoice Generation] Total workers in system: ${workers.length}`);
       console.log(`[Invoice Generation] Total history records in period: ${periodHistory.length}`);
 
-      for (const contract of activeContracts) {
-        // Get all residence IDs for this contract (supports multiple residences)
-        let contractResidenceIds = getContractResidenceIds(contract);
+      for (const source of billingSources) {
+        const contractId = source.terms.contractId;
+        let contractResidenceIds = source.residenceIds;
 
         // Apply residence filter if specified
         if (filters?.residenceId && filters.residenceId !== 'all') {
@@ -2202,14 +2301,14 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
         }
 
         if (contractResidenceIds.length === 0) {
-          console.warn(`Contract ${contract.id} has no residences (after filter) - skipping`);
+          console.warn(`Contract ${contractId} has no residences (after filter) - skipping`);
           continue;
         }
 
         // Resolve Company
-        const company = companies.find(c => c.id === contract.companyId);
+        const company = companies.find(c => c.id === source.terms.companyId);
         if (!company) {
-          console.warn(`Company not found for contract ${contract.id}`);
+          console.warn(`Company not found for contract ${contractId}`);
           continue;
         }
 
@@ -2219,284 +2318,68 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
             // Check if invoice already exists for this month and residence (skip if forceRegenerate)
             if (!forceRegenerate) {
               const existing = invoices.find(inv =>
-                inv.contractId === contract.id &&
+                inv.contractId === contractId &&
                 inv.month === month &&
                 inv.residenceId === residenceId
               );
               if (existing) {
-                console.log(`Invoice already exists for contract ${contract.id} residence ${residenceId} month ${month}`);
+                console.log(`Invoice already exists for contract ${contractId} residence ${residenceId} month ${month}`);
                 continue;
               }
             }
 
-            console.log(`[Invoice Debug] Processing residence ${residenceId}`);
-            console.log(`[Invoice Debug] Total occupants: ${occupants.length}`);
-            console.log(`[Invoice Debug] Occupants in this residence: ${occupants.filter(o => o.residenceId === residenceId).length}`);
+            const workerIdsInResidence = findWorkerIdsInResidence(residenceId, period, occupancyContext);
+            const residenceWorkers = selectBillableWorkers(availableWorkers, workerIdsInResidence, company);
 
-            // Find ALL workers who were in this residence during the billing period
-            // AND belong to this company
-            const workerIdsInResidence = new Set<string>();
-
-            // Add currently occupied workers (no checkout date)
-            occupants
-              .filter(occ => occ.residenceId === residenceId && !occ.until)
-              .forEach(occ => workerIdsInResidence.add(occ.workerId));
-
-            // Add workers who were in this residence during the billing period (including checked out)
-            occupants
-              .filter(occ => {
-                if (occ.residenceId !== residenceId) return false;
-                const occStart = new Date(occ.since);
-                const occEnd = occ.until ? new Date(occ.until) : endDate;
-                // Check if occupancy overlaps with billing period (use >= for same day)
-                return occStart <= endDate && occEnd >= startDate;
-              })
-              .forEach(occ => workerIdsInResidence.add(occ.workerId));
-
-            // Add workers from historical movements in this period
-            periodHistory
-              .filter(h => h.residenceId === residenceId)
-              .forEach(h => workerIdsInResidence.add(h.workerId));
-
-            // Also check toResidenceId for transfers
-            periodHistory
-              .filter(h => h.toResidenceId === residenceId)
-              .forEach(h => workerIdsInResidence.add(h.workerId));
-
-            // Filter to only workers belonging to this company
-            const companyName = (company.name || '').trim().toLowerCase();
-            const companyNameAr = (company.nameAr || '').trim().toLowerCase();
-            const companyNameEn = (company.nameEn || '').trim().toLowerCase();
-            const companyId = (company.id || '').trim().toLowerCase();
-
-            const residenceWorkers = availableWorkers.filter(w => {
-              if (!workerIdsInResidence.has(w.id)) return false;
-
-              const workerCompany = (w.company || '').trim().toLowerCase();
-              return (
-                workerCompany === companyName ||
-                workerCompany === companyNameAr ||
-                workerCompany === companyNameEn ||
-                workerCompany === companyId
-              );
-            });
-
-            console.log(`[Invoice Generation] Contract ${contract.id}, Residence ${residenceId}: Found ${residenceWorkers.length} workers for company "${company.name}" (Total in residence: ${workerIdsInResidence.size})`);
+            console.log(`[Invoice Generation] Contract ${contractId} (${source.source}), Residence ${residenceId}: Found ${residenceWorkers.length} workers for company "${company.name}" (Total in residence: ${workerIdsInResidence.size})`);
 
             if (residenceWorkers.length === 0) {
-              console.warn(`No workers found for company "${company.name}" in residence ${residenceId} (contract ${contract.id})`);
+              console.warn(`No workers found for company "${company.name}" in residence ${residenceId} (contract ${contractId})`);
             }
 
-            // Calculate Days for each worker
-            const workerBreakdown: any[] = [];
-            let totalBillableDays = 0;
+            const billing = billResidence(
+              source.terms,
+              residenceId,
+              period,
+              residenceWorkers,
+              occupancyContext
+            );
 
-            for (const worker of residenceWorkers) {
-              // Filter movements for this worker in this residence
-              const workerMovements = periodHistory.filter(h =>
-                h.workerId === worker.id &&
-                h.residenceId === residenceId
-              ).sort((a, b) => new Date(a.actionDate).getTime() - new Date(b.actionDate).getTime());
-
-              // Check if currently occupying
-              const currentOccupancy = occupants.find(o =>
-                o.workerId === worker.id && o.residenceId === residenceId && !o.until
-              );
-
-              // Check all occupancy records that overlap with the billing period
-              const allWorkerOccupancy = occupants.filter(o => {
-                if (o.workerId !== worker.id || o.residenceId !== residenceId) return false;
-                const occStart = new Date(o.since);
-                const occEnd = o.until ? new Date(o.until) : endDate;
-                // Only include records that overlap with billing period
-                return occStart <= endDate && occEnd >= startDate;
-              });
-
-              // Debug logging for specific worker
-              if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                console.log(`[DEBUG] Worker: ${worker.name}`);
-                console.log(`[DEBUG] Billing period: ${startDate.toISOString()} to ${endDate.toISOString()}`);
-                console.log(`[DEBUG] All occupancy records for this worker:`, allWorkerOccupancy.map(o => ({
-                  since: o.since,
-                  until: o.until,
-                  residenceId: o.residenceId
-                })));
-                console.log(`[DEBUG] Movements count:`, workerMovements.length);
-                console.log(`[DEBUG] Movements:`, workerMovements.map(m => ({
-                  actionType: m.actionType,
-                  actionDate: m.actionDate,
-                  residenceId: m.residenceId,
-                  toResidenceId: m.toResidenceId,
-                  fromResidenceId: m.fromResidenceId
-                })));
-              }
-
-              // Determine initial state at startDate
-              let isInside = false;
-
-              if (workerMovements.length > 0) {
-                const firstEvent = workerMovements[0];
-                const firstType = firstEvent.actionType;
-                // If first event is leaving, they must have been inside
-                // For TRANSFER, check if it's outgoing from this residence
-                const isTransferOut = firstType === 'TRANSFER' && firstEvent.fromResidenceId === residenceId;
-
-                if (firstType === 'CHECK_OUT' || isTransferOut) {
-                  isInside = true;
-                }
-              } else {
-                // No movements in period - check occupancy records
-                // Check if there's any occupancy record that overlaps with the billing period
-                for (const occ of allWorkerOccupancy) {
-                  const occStart = new Date(occ.since);
-                  const occEnd = occ.until ? new Date(occ.until) : endDate;
-
-                  // Check if occupancy overlaps with billing period (use >= for same day)
-                  if (occStart <= endDate && occEnd >= startDate) {
-                    isInside = true;
-                    break;
-                  }
-                }
-
-                // Fallback: If currently occupied and check-in was before period start
-                if (!isInside && currentOccupancy) {
-                  if (new Date(currentOccupancy.since) < startDate) {
-                    isInside = true;
-                  }
-                }
-              }
-
-              // Calculate active days
-              let days = 0;
-              let currentStatus = isInside;
-              let lastDate = startDate;
-
-              // If no movements, calculate from occupancy records
-              if (workerMovements.length === 0) {
-                // Find the relevant occupancy records that overlap with billing period
-                for (const occ of allWorkerOccupancy) {
-                  const occStart = new Date(occ.since);
-                  const occEnd = occ.until ? new Date(occ.until) : endDate;
-
-                  // Calculate overlap with billing period
-                  const effectiveStart = occStart > startDate ? occStart : startDate;
-                  const effectiveEnd = occEnd < endDate ? occEnd : endDate;
-
-                  if (effectiveStart <= effectiveEnd) {
-                    // +1 to include both start and end days (same day = 1, consecutive = 2)
-                    const diff = differenceInDays(effectiveEnd, effectiveStart) + 1;
-                    days += Math.max(0, diff);
-
-                    // Debug logging
-                    if (worker.name && worker.name.includes('RAHEEM')) {
-                      console.log(`[DEBUG] Occupancy record:`, {
-                        since: occ.since,
-                        until: occ.until,
-                        effectiveStart: effectiveStart.toISOString(),
-                        effectiveEnd: effectiveEnd.toISOString(),
-                        calculatedDays: diff
-                      });
-                    }
-                  }
-                }
-              } else {
-                // Use movement-based calculation
-                if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                  console.log(`[DEBUG] Using movement-based calculation, initial status:`, currentStatus);
-                }
-
-                for (const event of workerMovements) {
-                  const eventDate = new Date(event.actionDate);
-                  if (eventDate < startDate) continue;
-                  if (eventDate > endDate) break;
-
-                  if (currentStatus) {
-                    // +1 to include both start and end days (same day = 1, consecutive = 2)
-                    const diff = differenceInDays(eventDate, lastDate) + 1;
-                    days += diff;
-
-                    if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                      console.log(`[DEBUG] Adding days from ${lastDate.toISOString()} to ${eventDate.toISOString()}: ${diff} days`);
-                    }
-                  }
-
-                  const isTransferIn = event.actionType === 'TRANSFER' && event.toResidenceId === contract.residenceId;
-
-                  if (event.actionType === 'CHECK_IN' || isTransferIn) {
-                    currentStatus = true;
-                    if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                      console.log(`[DEBUG] Status changed to IN at ${eventDate.toISOString()}`);
-                    }
-                  } else {
-                    currentStatus = false;
-                    if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                      console.log(`[DEBUG] Status changed to OUT at ${eventDate.toISOString()}`);
-                    }
-                  }
-                  lastDate = eventDate;
-                }
-
-                // After last event, if still inside, add days until endDate
-                if (currentStatus) {
-                  // +1 to include both start and end days (same day = 1, consecutive = 2)
-                  const diff = differenceInDays(endDate, lastDate) + 1;
-                  days += diff;
-
-                  if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                    console.log(`[DEBUG] Adding remaining days from ${lastDate.toISOString()} to ${endDate.toISOString()}: ${diff} days`);
-                  }
-                }
-
-                if (worker.name && (worker.name.includes('RAHEEM') || worker.name.includes('MAROOF'))) {
-                  console.log(`[DEBUG] Total calculated days:`, days);
-                }
-              }
-
-              if (days > 0) {
-                workerBreakdown.push({
-                  workerId: worker.id,
-                  name: worker.name,
-                  days,
-                  amount: (contract.ratePerPersonPerMonth / 30) * days
-                });
-                totalBillableDays += days;
-              }
-            }
-
-            if (totalBillableDays === 0) {
-              console.log(`No billable days for contract ${contract.id} residence ${residenceId}`);
+            if (billing.totalDays === 0) {
+              console.log(`No billable days for contract ${contractId} residence ${residenceId}`);
               continue;
             }
 
-            const totalAmount = workerBreakdown.reduce((sum, w) => sum + w.amount, 0);
-
-            // Generate short invoice ID: inv_CityAbbr_ResAbbr_YYMM
-            const residenceObj = residences.find(r => r.id === residenceId);
-            const cityAbbr = (residenceObj?.city || 'UNK').substring(0, 3).toUpperCase();
-            const resAbbr = (residenceObj?.name || residenceId).substring(0, 4).replace(/[^a-zA-Z0-9]/g, '');
-            const yearMonth = month.replace('-', '').substring(2); // YYMM from YYYYMM
+            // An invoice is identified by (contract, residence, fiscal month).
+            // All three are needed: one residence can host several contracts in
+            // the same month (different sponsors), and one contract can cover
+            // several residences. Ids are used verbatim rather than abbreviated
+            // names — name-derived ids stripped every Arabic character, so
+            // residences like "فلسطين 2" collapsed onto a single id and each
+            // generated invoice silently overwrote the previous one.
+            const yearMonth = month.replace('-', '').substring(2); // YYMM from YYYY-MM
 
             const invoice: Invoice = {
-              id: `inv_${cityAbbr}_${resAbbr}_${yearMonth}`,
-              contractId: contract.id,
-              companyId: contract.companyId,
+              id: `inv_${contractId}_${residenceId}_${yearMonth}`,
+              contractId: contractId,
+              companyId: source.terms.companyId,
               residenceId: residenceId,
               month,
               startDate: startDate.toISOString(),
               endDate: endDate.toISOString(),
-              numberOfWorkers: workerBreakdown.length,
-              numberOfDays: totalBillableDays,
-              ratePerPerson: contract.ratePerPersonPerMonth,
-              totalAmount: Math.round(totalAmount * 100) / 100,
+              numberOfWorkers: billing.totalWorkers,
+              numberOfDays: billing.totalDays,
+              ratePerPerson: source.ratePerPersonPerMonth,
+              totalAmount: billing.totalAmount,
               status: 'Pending',
               generatedAt: new Date().toISOString(),
-              notes: JSON.stringify(workerBreakdown),
+              notes: JSON.stringify(billing.lines),
             };
 
             await saveInvoice(invoice);
             result.generated++;
           } catch (e) {
-            console.error(`Failed to generate invoice for contract ${contract.id} residence ${residenceId}:`, e);
+            console.error(`Failed to generate invoice for contract ${contractId} residence ${residenceId}:`, e);
             result.errors++;
           }
         } // end for each residence
@@ -2515,26 +2398,8 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
 
   // ============ UTILITY FUNCTIONS ============
 
-  // Helper to get effective residence IDs from a contract
-  function getContractResidenceIds(contract: Contract): string[] {
-    // If residenceIds is set, use it
-    if (contract.residenceIds && contract.residenceIds.length > 0) {
-      // If 'all' is in the array, return all residence IDs
-      if (contract.residenceIds.includes('all')) {
-        return residences.map(r => r.id);
-      }
-      return contract.residenceIds;
-    }
-    // Fallback to legacy single residenceId
-    if (contract.residenceId) {
-      // If 'all', return all residence IDs
-      if (contract.residenceId === 'all') {
-        return residences.map(r => r.id);
-      }
-      return [contract.residenceId];
-    }
-    return [];
-  }
+  // فكّ الرمز `all` انتقل إلى `resolveResidenceIds` في وحدة مصادر الفوترة،
+  // فلا تبقى نسختان من نفس القاعدة تتباعدان مع الوقت.
 
   function getContractsByCompany(companyId: string): Contract[] {
     return contracts.filter(c => c.companyId === companyId);
@@ -4256,7 +4121,8 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     // firing another round of Firestore requests.
     if (isRefreshingRef.current) {
       console.log('📊 [Dashboard] Refresh already in progress, returning cached stats');
-      if (dashboardStats) return dashboardStats;
+      const latest = dashboardStatsRef.current;
+      if (latest) return latest;
 
       if (typeof window !== 'undefined') {
         try {
@@ -4282,7 +4148,8 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
           const meta = JSON.parse(retryRaw) as { retryAfter?: number };
           if (meta.retryAfter && Date.now() < meta.retryAfter) {
             console.warn('⏳ [Dashboard] Quota retry-after active, skipping Firestore refresh');
-            if (dashboardStats) return dashboardStats;
+            const latest = dashboardStatsRef.current;
+            if (latest) return latest;
 
             const cachedRaw = window.localStorage.getItem(CACHE_KEY);
             if (cachedRaw) {
@@ -4307,7 +4174,12 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
           const cached = JSON.parse(dataRaw) as DashboardStats;
           if (meta.timestamp && Date.now() - meta.timestamp < TTL_MS) {
             console.log('📊 [Dashboard] Using cached dashboard stats');
-            setDashboardStats(cached);
+            // Bail out of the state update when the cached payload matches what
+            // is already in state, otherwise every call hands React a brand new
+            // object and re-renders every consumer.
+            setDashboardStats(prev =>
+              prev && prev.lastUpdated === cached.lastUpdated ? prev : cached
+            );
             return cached;
           }
         }
@@ -4355,7 +4227,8 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
 
       // 6. Occupancy by Residence
       const residenceOccupancy: Record<string, number> = {};
-      const targetResidences = residences.length > 0 ? residences : [];
+      const liveResidences = residencesRef.current;
+      const targetResidences = liveResidences.length > 0 ? liveResidences : [];
       const targetResidenceIds = new Set(targetResidences.map(r => r.id));
 
       // Instead of N aggregation queries (one per residence), fetch all active
@@ -4452,7 +4325,8 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
               }
             }
 
-            if (dashboardStats) return dashboardStats;
+            const latest = dashboardStatsRef.current;
+            if (latest) return latest;
             if (typeof window !== 'undefined') {
               try {
                 const cachedRaw = window.localStorage.getItem(CACHE_KEY);
@@ -4482,7 +4356,7 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     } finally {
       isRefreshingRef.current = false;
     }
-  }, [db, residences, dashboardStats]);
+  }, [db]);
 
   // 🆕 Automatic Archiving of Checked-out Occupants
   const autoArchiveOccupants = useCallback(async () => {
