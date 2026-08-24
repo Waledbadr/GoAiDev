@@ -283,10 +283,23 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
           return contractItem;
         });
         setContracts(contractList);
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('cached_contracts_v2', JSON.stringify(contractList));
+          }
+        } catch {}
         setLoading(false);
       },
       (error) => {
-        console.warn('Error on contractsV2 snapshot listener, triggering API fallback:', error);
+        console.warn('Error on contractsV2 snapshot listener, loading local cache:', error);
+        try {
+          if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem('cached_contracts_v2');
+            if (cached) {
+              setContracts(JSON.parse(cached));
+            }
+          }
+        } catch {}
         fetchContractsFromApi();
       }
     );
@@ -310,9 +323,22 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
           } as ContractInvoice;
         });
         setInvoices(invoiceList);
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('cached_contract_invoices', JSON.stringify(invoiceList));
+          }
+        } catch {}
       },
       (error) => {
-        console.warn('Error on contractInvoices snapshot listener:', error);
+        console.warn('Error on contractInvoices snapshot listener, loading local cache:', error);
+        try {
+          if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem('cached_contract_invoices');
+            if (cached) {
+              setInvoices(JSON.parse(cached));
+            }
+          }
+        } catch {}
       }
     );
 
@@ -335,9 +361,22 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
           } as ContractAlert;
         });
         setAlerts(alertList);
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('cached_contract_alerts', JSON.stringify(alertList));
+          }
+        } catch {}
       },
       (error) => {
-        console.warn('Error on contractAlerts snapshot listener:', error);
+        console.warn('Error on contractAlerts snapshot listener, loading local cache:', error);
+        try {
+          if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem('cached_contract_alerts');
+            if (cached) {
+              setAlerts(JSON.parse(cached));
+            }
+          }
+        } catch {}
       }
     );
 

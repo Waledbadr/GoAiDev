@@ -42,6 +42,10 @@ import {
   Phone,
   Mail,
   Zap,
+  Paperclip,
+  Layers,
+  Copy,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   type Contract,
@@ -62,6 +66,9 @@ import { useLanguage } from '@/context/language-context';
 import { useToast } from '@/hooks/use-toast';
 import { InlineNewContractDraft } from './InlineNewContractDraft';
 import { ContractPrintView } from './ContractPrintView';
+import { ContractAddendaAndAttachments } from './ContractAddendaAndAttachments';
+import { ContractContextMenu } from './ContractContextMenu';
+import { EditLinkedResidencesDialog } from '@/components/contracts/EditLinkedResidencesDialog';
 import { differenceInDays, parseISO, addMonths, addYears, format } from 'date-fns';
 
 export function ContractWorkspaceView() {
@@ -87,12 +94,18 @@ export function ContractWorkspaceView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDraftingNew, setIsDraftingNew] = useState(false);
   const [printingContract, setPrintingContract] = useState<Contract | null>(null);
+  const [residenceEditContract, setResidenceEditContract] = useState<Contract | null>(null);
 
-  // Search & Filter in Stream
+  // Context Menu State
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenuContract, setContextMenuContract] = useState<Contract | null>(null);
+
+  // Search, Filter & Deduplication
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'revenue' | 'expense'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [hideDuplicates, setHideDuplicates] = useState(true);
 
   // Editable Form State for Selected Contract
   const [editState, setEditState] = useState<{
@@ -119,9 +132,15 @@ export function ContractWorkspaceView() {
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
 
-  // Filter stream items
+  // Helper to get real residence names
+  const getResidenceName = (id: string) => {
+    const r = residences.find((item) => item.id === id);
+    return r ? r.name : id;
+  };
+
+  // Filter and Deduplication Logic
   const filteredList = useMemo(() => {
-    return contracts.filter((c) => {
+    const rawList = contracts.filter((c) => {
       if (c.archivedAt) return false;
       const party = (c.partyName || '').toLowerCase();
       const num = (c.contractNumber || c.id).toLowerCase();
@@ -134,7 +153,22 @@ export function ContractWorkspaceView() {
 
       return matchesSearch && matchesCat && matchesType && matchesStatus;
     });
-  }, [contracts, searchTerm, categoryFilter, typeFilter, statusFilter]);
+
+    if (!hideDuplicates) return rawList;
+
+    // Deduplicate: Keep the primary latest contract for identical partyName + startDate + rate
+    const seen = new Set<string>();
+    return rawList.filter((c) => {
+      // If it's a child addendum, hide from main stream when deduplicating
+      if (c.contractRelationType === 'addendum' && c.parentContractId) {
+        return false;
+      }
+      const key = `${(c.partyName || '').trim().toLowerCase()}_${c.startDate}_${c.billingRate}_${c.contractCategory}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [contracts, searchTerm, categoryFilter, typeFilter, statusFilter, hideDuplicates]);
 
   // Set default selected contract
   useEffect(() => {
@@ -201,14 +235,15 @@ export function ContractWorkspaceView() {
   };
 
   // Quick 1-Click Renew
-  const handleQuickRenew = async (months: number) => {
-    if (!activeContract) return;
+  const handleQuickRenew = async (targetContract: Contract, months: number) => {
     try {
-      const base = activeContract.endDate ? parseISO(activeContract.endDate) : new Date();
+      const base = targetContract.endDate ? parseISO(targetContract.endDate) : new Date();
       const target = addMonths(base, months);
       const targetStr = format(target, 'yyyy-MM-dd');
-      await renewContract(activeContract.id, targetStr);
-      setEditState((prev) => ({ ...prev, endDate: targetStr }));
+      await renewContract(targetContract.id, targetStr);
+      if (activeContract?.id === targetContract.id) {
+        setEditState((prev) => ({ ...prev, endDate: targetStr }));
+      }
       toast({
         title: isAr ? 'تم تجديد العقد فوراً ⚡' : 'Contract Renewed Instantly ⚡',
         description: isAr ? `تم التمديد حتى ${targetStr}` : `Extended until ${targetStr}`,
@@ -219,12 +254,11 @@ export function ContractWorkspaceView() {
   };
 
   // Quick Issue Monthly Invoice
-  const handleIssueInvoiceNow = async () => {
-    if (!activeContract) return;
+  const handleIssueInvoiceNow = async (targetContract: Contract) => {
     setIsGeneratingInvoice(true);
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
-      await generateInvoice(activeContract.id, currentMonth, editState.billingRate);
+      await generateInvoice(targetContract.id, currentMonth, targetContract.billingRate);
       toast({
         title: isAr ? 'تم إصدار الفاتورة 📄' : 'Invoice Generated 📄',
         description: isAr ? `فاتورة شهر ${currentMonth} أصبحت جاهزة ومسجلة.` : `Invoice for ${currentMonth} created.`,
@@ -237,19 +271,35 @@ export function ContractWorkspaceView() {
   };
 
   // Toggle Suspend / Active
-  const handleToggleSuspend = async () => {
-    if (!activeContract) return;
+  const handleToggleSuspend = async (targetContract: Contract) => {
     try {
-      if (activeContract.status === 'Suspended') {
-        await activateContract(activeContract.id);
+      if (targetContract.status === 'Suspended') {
+        await activateContract(targetContract.id);
         toast({ title: isAr ? 'تم تفعيل العقد بنجاح' : 'Contract Activated' });
       } else {
-        await suspendContract(activeContract.id);
+        await suspendContract(targetContract.id);
         toast({ title: isAr ? 'تم إيقاف العقد مؤقتاً' : 'Contract Suspended' });
       }
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
+  };
+
+  // Archive Contract
+  const handleArchive = async (targetContract: Contract) => {
+    try {
+      await archiveContract(targetContract.id);
+      toast({ title: isAr ? 'تمت أرشفة العقد بنجاح' : 'Contract Archived' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  // Right-Click Context Menu Handler
+  const handleCardContextMenu = (e: React.MouseEvent, contract: Contract) => {
+    e.preventDefault();
+    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setContextMenuContract(contract);
   };
 
   const activeInvoices = activeContract ? getInvoicesByContract(activeContract.id) : [];
@@ -294,7 +344,7 @@ export function ContractWorkspaceView() {
 
   return (
     <div
-      className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-start"
+      className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-start relative"
       dir={isAr ? 'rtl' : 'ltr'}
     >
       {/* ================= STREAM PANEL (4 COLUMNS) ================= */}
@@ -307,7 +357,7 @@ export function ContractWorkspaceView() {
               {isAr ? 'تدفق العقود المباشر' : 'Contracts Stream'}
             </h3>
             <p className="text-[11px] text-slate-400">
-              {isAr ? 'انقر على أي عقد لفتحه فوراً' : 'Select any contract to inspect instantly'}
+              {isAr ? 'اضغط بزر الفأرة الأيمن لأي عقد لفتح قائمة الإجراءات السريعة ⚡' : 'Right-click any contract for instant actions ⚡'}
             </p>
           </div>
 
@@ -335,45 +385,61 @@ export function ContractWorkspaceView() {
           />
         </div>
 
-        {/* Category Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        {/* Category Filter Chips & Deduplication Toggle */}
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('all')}
+              className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all shrink-0 ${
+                categoryFilter === 'all'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {isAr ? 'الكل' : 'All'} ({filteredList.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('revenue')}
+              className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all shrink-0 ${
+                categoryFilter === 'revenue'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
+              }`}
+            >
+              {isAr ? 'إيراد 🟢' : 'Revenue 🟢'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('expense')}
+              className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all shrink-0 ${
+                categoryFilter === 'expense'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100'
+              }`}
+            >
+              {isAr ? 'مصروف 🔴' : 'Expense 🔴'}
+            </button>
+          </div>
+
           <button
             type="button"
-            onClick={() => setCategoryFilter('all')}
-            className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all shrink-0 ${
-              categoryFilter === 'all'
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+            onClick={() => setHideDuplicates(!hideDuplicates)}
+            className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition-all flex items-center gap-1 shrink-0 ${
+              hideDuplicates
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300'
+                : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
             }`}
+            title={isAr ? 'إخفاء العقود المكررة وتجميع الملاحق' : 'Deduplicate & Group Addenda'}
           >
-            {isAr ? 'الكل' : 'All'} ({contracts.filter((c) => !c.archivedAt).length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setCategoryFilter('revenue')}
-            className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all shrink-0 ${
-              categoryFilter === 'revenue'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
-            }`}
-          >
-            {isAr ? 'إيراد 🟢' : 'Revenue 🟢'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setCategoryFilter('expense')}
-            className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all shrink-0 ${
-              categoryFilter === 'expense'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100'
-            }`}
-          >
-            {isAr ? 'مصروف 🔴' : 'Expense 🔴'}
+            <Copy className="w-3 h-3" />
+            <span>{isAr ? (hideDuplicates ? 'منقّح ✓' : 'إظهار الكل') : (hideDuplicates ? 'Cleaned ✓' : 'All')}</span>
           </button>
         </div>
 
         {/* Contracts Scrollable List */}
-        <div className="space-y-2.5 max-h-[640px] overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-[660px] overflow-y-auto pr-1">
           {filteredList.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-xs">
               {isAr ? 'لا توجد عقود مطابقة' : 'No matching contracts found'}
@@ -385,6 +451,15 @@ export function ContractWorkspaceView() {
               const isRevItem = contract.contractCategory === 'revenue';
               const monthlyVal = getMonthlyValue(contract);
 
+              // Check linked residences
+              const linkedResList = (contract.linkedResidences || []).map(getResidenceName);
+
+              // Status calculation
+              const isContractExp = contract.status === 'Expired' || (contract.endDate && parseISO(contract.endDate) < new Date() && !contract.isOpenEnded);
+              const isContractSusp = contract.status === 'Suspended';
+              const daysLeft = contract.endDate && !contract.isOpenEnded ? differenceInDays(parseISO(contract.endDate), new Date()) : null;
+              const isSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 30;
+
               return (
                 <div
                   key={contract.id}
@@ -392,15 +467,17 @@ export function ContractWorkspaceView() {
                     setIsDraftingNew(false);
                     setSelectedId(contract.id);
                   }}
-                  className={`cursor-pointer p-3.5 rounded-2xl border transition-all text-xs space-y-2 relative ${
+                  onContextMenu={(e) => handleCardContextMenu(e, contract)}
+                  className={`cursor-pointer p-4 rounded-2xl border transition-all text-xs space-y-2.5 relative ${
                     isSelected
                       ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-600 shadow-md ring-2 ring-indigo-500/20'
                       : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
+                  {/* Header Row: Party Name & Monthly Value */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-0.5 min-w-0">
-                      <span className="font-bold text-slate-900 dark:text-slate-100 block truncate">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 block truncate text-sm">
                         {contract.partyName}
                       </span>
                       <p className="text-[11px] text-slate-500 truncate">
@@ -409,19 +486,38 @@ export function ContractWorkspaceView() {
                     </div>
 
                     <div className={isAr ? 'text-end shrink-0' : 'text-right shrink-0'}>
-                      <span className="font-mono font-bold text-slate-900 dark:text-slate-100 block">
+                      <span className="font-mono font-bold text-slate-900 dark:text-slate-100 block text-xs">
                         {formatSAR(monthlyVal.amount)} SAR
                       </span>
                       <span className="text-[9px] text-slate-400">{isAr ? 'شهرياً' : '/ month'}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-100 dark:border-slate-700/50">
-                    <span className="text-slate-500">
-                      {isAr ? 'ينتهي: ' : 'Expires: '}{' '}
-                      <strong className="font-mono">{contract.isOpenEnded ? (isAr ? 'مفتوح' : 'Open') : contract.endDate}</strong>
-                    </span>
+                  {/* Status & Addendum Indicators */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {/* Primary Status Badge */}
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] py-0 font-bold ${
+                        isContractSusp
+                          ? 'bg-slate-100 text-slate-700 border-slate-300'
+                          : isContractExp
+                          ? 'bg-rose-50 text-rose-700 border-rose-300'
+                          : isSoon
+                          ? 'bg-amber-50 text-amber-800 border-amber-300 font-bold'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      }`}
+                    >
+                      {isContractSusp
+                        ? (isAr ? '⏸️ موقوف' : '⏸️ Suspended')
+                        : isContractExp
+                        ? (isAr ? '🔴 منتهي' : '🔴 Expired')
+                        : isSoon
+                        ? (isAr ? `⏳ ينتهي قريباً (${daysLeft} يوم)` : `⏳ Expiring Soon (${daysLeft}d)`)
+                        : (isAr ? '🟢 ساري ونشط' : '🟢 Active')}
+                    </Badge>
 
+                    {/* Category Badge */}
                     <Badge
                       variant="outline"
                       className={`text-[9px] py-0 ${
@@ -432,6 +528,66 @@ export function ContractWorkspaceView() {
                     >
                       {isRevItem ? (isAr ? 'إيراد' : 'Revenue') : (isAr ? 'مصروف' : 'Expense')}
                     </Badge>
+
+                    {/* Addendum / Primary indicator */}
+                    {contract.contractRelationType === 'addendum' && (
+                      <Badge variant="outline" className="text-[9px] py-0 bg-purple-50 text-purple-700 border-purple-300">
+                        📑 {isAr ? 'ملحق عقد' : 'Addendum'}
+                      </Badge>
+                    )}
+
+                    {/* Attachment Icon */}
+                    {(contract.attachments?.length || (contract as any).attachmentUrl) && (
+                      <Badge variant="outline" className="text-[9px] py-0 bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-0.5">
+                        <Paperclip className="w-2.5 h-2.5" />
+                        PDF
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Prominent Linked Residences Badges on the Card */}
+                  <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {linkedResList.length > 0 ? (
+                        linkedResList.map((resName, i) => (
+                          <Badge
+                            key={i}
+                            variant="secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setResidenceEditContract(contract);
+                            }}
+                            className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 py-0.5 px-2 cursor-pointer transition-colors"
+                            title={isAr ? 'اضغط لتعديل السكنات المربوطة' : 'Click to edit linked camps'}
+                          >
+                            📍 {resName}
+                          </Badge>
+                        ))
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setResidenceEditContract(contract);
+                          }}
+                          className="text-[10px] text-amber-600 bg-amber-50 hover:bg-amber-100 border border-dashed border-amber-300 rounded-lg px-2 py-0.5 flex items-center gap-1 transition-colors"
+                        >
+                          <Plus className="w-2.5 h-2.5" />
+                          <span>{isAr ? 'تعيين سكن لهذا العقد' : 'Assign Camp'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Expiration Date Footer */}
+                  <div className="flex items-center justify-between text-[10px] pt-1 text-slate-500">
+                    <span>
+                      {isAr ? 'ينتهي: ' : 'Expires: '}{' '}
+                      <strong className="font-mono">{contract.isOpenEnded ? (isAr ? 'مفتوح' : 'Open') : contract.endDate}</strong>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {isAr ? 'زر الماوس اليمين ⚡' : 'Right-click for menu ⚡'}
+                    </span>
                   </div>
                 </div>
               );
@@ -474,6 +630,11 @@ export function ContractWorkspaceView() {
                     <Badge variant="outline" className="text-xs bg-slate-800 text-slate-300 border-slate-700">
                       {getContractStatusLabel(activeContract.status, isAr)}
                     </Badge>
+                    {activeContract.contractRelationType === 'addendum' && (
+                      <Badge variant="outline" className="text-xs bg-purple-500/20 text-purple-300 border-purple-400">
+                        📑 {isAr ? 'ملحق عقد' : 'Addendum'}
+                      </Badge>
+                    )}
                   </div>
 
                   <h2 className="text-xl font-bold text-white tracking-tight mt-2">
@@ -504,7 +665,7 @@ export function ContractWorkspaceView() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
-                    onClick={handleIssueInvoiceNow}
+                    onClick={() => handleIssueInvoiceNow(activeContract)}
                     disabled={isGeneratingInvoice}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 h-9 px-4 rounded-xl shadow-sm"
                   >
@@ -525,7 +686,17 @@ export function ContractWorkspaceView() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={handleToggleSuspend}
+                    onClick={() => setResidenceEditContract(activeContract)}
+                    className="bg-white/10 hover:bg-blue-600 border-white/20 text-white text-xs gap-1.5 h-9 px-3.5 rounded-xl"
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-blue-400" />
+                    {isAr ? 'تعيين السكنات 📍' : 'Link Camps 📍'}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleToggleSuspend(activeContract)}
                     className="bg-white/10 hover:bg-rose-600 border-white/20 text-white text-xs gap-1.5 h-9 px-3.5 rounded-xl"
                   >
                     {activeContract.status === 'Suspended' ? (
@@ -588,21 +759,21 @@ export function ContractWorkspaceView() {
                     <span className="text-[11px] text-slate-500 font-medium">{isAr ? 'تمديد فوري:' : 'Quick Extend:'}</span>
                     <button
                       type="button"
-                      onClick={() => handleQuickRenew(1)}
+                      onClick={() => handleQuickRenew(activeContract, 1)}
                       className="px-2 py-1 bg-white dark:bg-slate-700 border border-slate-200 rounded-lg text-[10px] font-semibold hover:border-emerald-500 hover:text-emerald-600 transition-all"
                     >
                       +1 {isAr ? 'شهر' : 'Mo'}
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleQuickRenew(3)}
+                      onClick={() => handleQuickRenew(activeContract, 3)}
                       className="px-2 py-1 bg-white dark:bg-slate-700 border border-slate-200 rounded-lg text-[10px] font-semibold hover:border-emerald-500 hover:text-emerald-600 transition-all"
                     >
                       +3 {isAr ? 'أشهر' : 'Mos'}
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleQuickRenew(12)}
+                      onClick={() => handleQuickRenew(activeContract, 12)}
                       className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all shadow-sm"
                     >
                       +1 {isAr ? 'سنة كاملة ⚡' : 'Year ⚡'}
@@ -731,21 +902,31 @@ export function ContractWorkspaceView() {
                 </div>
               </div>
 
-              {/* SECTION 3: Linked Residences & Manager */}
+              {/* SECTION 3: Linked Residences & Contract Manager */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-                  <span className="font-bold text-slate-900 dark:text-slate-100 block">
-                    {isAr ? 'المجمعات والسكنات المشمولة بالعقد:' : 'Linked Camps & Residences:'}
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                      {isAr ? 'المجمعات والسكنات المشمولة بالعقد:' : 'Linked Camps & Residences:'}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setResidenceEditContract(activeContract)}
+                      className="text-[11px] h-6 text-indigo-600 hover:text-indigo-700 p-0"
+                    >
+                      {isAr ? 'تعديل السكنات 📍' : 'Edit Camps 📍'}
+                    </Button>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {activeContract.linkedResidences && activeContract.linkedResidences.length > 0 ? (
-                      (activeContract.linkedResidenceNames || activeContract.linkedResidences).map((res, i) => (
+                      activeContract.linkedResidences.map((resId, i) => (
                         <Badge
                           key={i}
                           variant="secondary"
                           className="text-xs bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 py-1"
                         >
-                          📍 {res}
+                          📍 {getResidenceName(resId)}
                         </Badge>
                       ))
                     ) : (
@@ -775,7 +956,10 @@ export function ContractWorkspaceView() {
                 </div>
               </div>
 
-              {/* SECTION 4: Invoices Ledger */}
+              {/* SECTION 4: Contract Addenda, Scanned Attachments & Guarantees */}
+              <ContractAddendaAndAttachments contract={activeContract} isAr={isAr} />
+
+              {/* SECTION 5: Invoices Ledger */}
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
@@ -787,7 +971,7 @@ export function ContractWorkspaceView() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={handleIssueInvoiceNow}
+                    onClick={() => handleIssueInvoiceNow(activeContract)}
                     disabled={isGeneratingInvoice}
                     className="text-xs h-8 gap-1 text-indigo-600 hover:bg-indigo-50 border-indigo-200"
                   >
@@ -876,11 +1060,41 @@ export function ContractWorkspaceView() {
         )}
       </div>
 
+      {/* Floating Right-Click Context Menu */}
+      <ContractContextMenu
+        contract={contextMenuContract}
+        position={contextMenuPosition}
+        onClose={() => {
+          setContextMenuPosition(null);
+          setContextMenuContract(null);
+        }}
+        onQuickRenew={(c) => handleQuickRenew(c, 3)}
+        onIssueInvoice={(c) => handleIssueInvoiceNow(c)}
+        onPrint={(c) => setPrintingContract(c)}
+        onEditResidences={(c) => setResidenceEditContract(c)}
+        onEdit={(c) => {
+          setSelectedId(c.id);
+          setIsDraftingNew(false);
+        }}
+        onToggleSuspend={(c) => handleToggleSuspend(c)}
+        onArchive={(c) => handleArchive(c)}
+        isAr={isAr}
+      />
+
       {/* Printable View Dialog */}
       <ContractPrintView
         contract={printingContract}
         open={Boolean(printingContract)}
         onOpenChange={(open) => !open && setPrintingContract(null)}
+      />
+
+      {/* Edit Linked Residences Dialog */}
+      <EditLinkedResidencesDialog
+        open={Boolean(residenceEditContract)}
+        onOpenChange={(open) => !open && setResidenceEditContract(null)}
+        contract={residenceEditContract}
+        residences={residences}
+        isAr={isAr}
       />
     </div>
   );
