@@ -7,5 +7,12 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "estatecare",
+      "database_id": "df5d6fab-efb5-4b09-b3a0-be536d7edaaf"
+    }
+  ]
 }
