@@ -1,4 +1,6 @@
-'use client';
+import fs from 'fs';
+
+const content = `'use client';
 
 import React, { createContext, useContext, useCallback, useState, useEffect } from 'react';
 import { db as maybeDb, auth } from '@/lib/firebase';
@@ -77,11 +79,11 @@ function fromTimestamp(val: any): string {
   if (typeof val === 'string') return val;
   if (val && typeof val.toDate === 'function') {
     const d = val.toDate();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return \`\${d.getFullYear()}-\${String(d.getMonth() + 1).padStart(2, '0')}-\${String(d.getDate()).padStart(2, '0')}\`;
   }
   if (val && val.seconds !== undefined) {
     const d = new Date(val.seconds * 1000);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return \`\${d.getFullYear()}-\${String(d.getMonth() + 1).padStart(2, '0')}-\${String(d.getDate()).padStart(2, '0')}\`;
   }
   return String(val);
 }
@@ -275,7 +277,7 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
       const vatAmount = ((data.billingRate || 0) * vatPercentage) / 100;
       const totalAmount = (data.billingRate || 0) + vatAmount;
 
-      const newId = `cnt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const newId = \`cnt_\${Date.now()}_\${Math.random().toString(36).slice(2, 7)}\`;
       const docData: Contract = {
         ...data,
         id: newId,
@@ -452,7 +454,7 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
   const generateInvoice = useCallback(
     async (contractId: string, month: string, amount: number) => {
-      const invId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const invId = \`inv_\${Date.now()}_\${Math.random().toString(36).slice(2, 6)}\`;
       const invData: ContractInvoice = {
         id: invId,
         contractId,
@@ -568,3 +570,7 @@ export function useContracts() {
   }
   return ctx;
 }
+`;
+
+fs.writeFileSync('src/context/contracts-context.tsx', content, 'utf8');
+console.log('✅ contracts-context.tsx successfully rewritten with clean UTF-8!');

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { db, auth } from '@/lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, updateDoc, getDocs, getDoc, query, where, limit, Unsubscribe, writeBatch, getCountFromServer, startAfter, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { d1Client } from '@/lib/d1-client';
 import { useToast } from '@/hooks/use-toast';
 import { useNotifications } from '@/context/notifications-context';
 import { useUsers } from '@/context/users-context';
@@ -759,8 +760,31 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     };
   }
 
-  // Load residences from Firestore directly to ensure data availability across devices
+  // Load residences, companies, and workers from Cloudflare D1 engine directly
   useEffect(() => {
+    async function loadFromD1() {
+      try {
+        const d1Res = await d1Client.getDocs('residences');
+        if (d1Res && d1Res.length > 0) {
+          const activeDocs = d1Res.filter((d: any) => !d.disabled);
+          setResidences(activeDocs.map(mapComplexToResidence));
+        }
+
+        const d1Comp = await d1Client.getDocs<Company>('companies');
+        if (d1Comp && d1Comp.length > 0) {
+          setCompanies(d1Comp);
+        }
+
+        const d1Workers = await d1Client.getDocs<Worker>('workers');
+        if (d1Workers && d1Workers.length > 0) {
+          setWorkers(d1Workers);
+        }
+      } catch (e) {
+        console.warn('D1 initial load error in accommodation:', e);
+      }
+    }
+    loadFromD1();
+
     const _auth = auth;
     const _db = db;
 
@@ -778,7 +802,7 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
           setResidences(activeDocs.map(mapComplexToResidence));
           setLoading(false);
         }, (error) => {
-          console.error("Accommodation: failed to load residences from Firestore", error);
+          console.warn("Accommodation: Firestore snapshot error, using D1 database instead", error);
           setLoading(false);
         });
       } else {
@@ -786,7 +810,6 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
           unsubscribeSnapshot();
           unsubscribeSnapshot = null;
         }
-        setResidences([]);
         setLoading(false);
       }
     });
