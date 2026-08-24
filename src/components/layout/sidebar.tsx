@@ -11,7 +11,7 @@ import {
   SidebarMenuSubItem,
   SidebarMenuSubButton,
 } from '@/components/ui/sidebar';
-import { Building, Home, Wrench, Settings, Users, ClipboardList, Move, ListOrdered, ClipboardMinus, AreaChart, History, PackageCheck, TrendingUp, TrendingDown, AlertTriangle, FileCheck, GitBranch, LifeBuoy, Truck, FileText, Clock, Wallet, Calendar, Check, RefreshCw, UserCheck } from 'lucide-react';
+import { Building, Home, Wrench, Settings, Users, ClipboardList, Move, ListOrdered, ClipboardMinus, AreaChart, History, PackageCheck, TrendingUp, TrendingDown, AlertTriangle, FileCheck, GitBranch, LifeBuoy, Truck, FileText, Clock, Wallet, Calendar, Check, RefreshCw, UserCheck, Sparkles, Receipt, Layers } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -96,6 +96,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { currentUser, loading } = useUsers();
   const { dict, locale } = useLanguage();
+  const isAr = locale === 'ar';
   const [isMounted, setIsMounted] = useState(false);
   // const [gitInfo, setGitInfo] = useState<ReturnType<typeof getFormattedGitInfo> | null>(null);
   const { isMobile, setOpenMobile } = useSidebar();
@@ -115,11 +116,115 @@ export function AppSidebar() {
     return null;
   }
 
-  // When inside the accommodation app, render accommodation sidebar
+  // When inside specific sub-apps, render their dedicated sidebar
+  const isContracts = pathname?.startsWith('/contracts');
   const isAccommodation = pathname?.startsWith('/accommodation');
   const isTimesheet = pathname?.startsWith('/timesheet');
   const isIncomeExpenses = pathname?.startsWith('/income-expenses');
   const isTimesheetDailyExport = pathname?.startsWith('/timesheet/export');
+
+  if (isContracts) {
+    return (
+      <>
+        <SidebarHeader>
+          <SidebarBrand
+            icon={<FileText className="h-8 w-8 shrink-0 text-indigo-600" />}
+            label={isAr ? 'العقود' : 'Contracts'}
+            className="text-indigo-600"
+          />
+          <div className="px-2 pb-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+            <SidebarMenuButton asChild tooltip={isAr ? 'العودة للرئيسية' : 'Back to Main'} className="bg-muted/50 border border-border mt-2 w-full justify-start">
+              <Link href="/" onClick={handleNavigate}>
+                <Home className="h-4 w-4" />
+                <span className="group-data-[collapsible=icon]:hidden text-sm ml-2 mr-2">
+                  {isAr ? 'العودة للرئيسية' : 'Back to Main'}
+                </span>
+              </Link>
+            </SidebarMenuButton>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarMenu>
+            {/* Contracts 2.0 Section */}
+            <div>
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
+                {isAr ? 'منظومة العقود 2.0' : 'Contracts OS 2.0'}
+              </div>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === '/contracts2'} tooltip="Contracts OS 2.0">
+                  <Link href="/contracts2" onClick={handleNavigate}>
+                    <Sparkles className="text-indigo-600" />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {isAr ? 'العقود المطورة 2.0' : 'Contracts OS 2.0'}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <div className="h-2"></div>
+            </div>
+
+            {/* Legacy Section */}
+            <div>
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
+                {isAr ? 'النسخة السابقة' : 'Legacy Version'}
+              </div>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === '/contracts'} tooltip="Contracts 1.0">
+                  <Link href="/contracts" onClick={handleNavigate}>
+                    <FileText />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {isAr ? 'العقود (النسخة 1.0)' : 'Contracts (Version 1.0)'}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <div className="h-2"></div>
+            </div>
+
+            {/* Related Modules Section */}
+            <div>
+              <div className="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-2 group-data-[collapsible=icon]:h-px group-data-[collapsible=icon]:w-6 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:bg-sidebar-border group-data-[collapsible=icon]:text-transparent">
+                {isAr ? 'الكيانات المرتبطة' : 'Linked Entities'}
+              </div>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === '/accommodation/residences'} tooltip="Camps & Residences">
+                  <Link href="/accommodation/residences" onClick={handleNavigate}>
+                    <Building />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {isAr ? 'السكنات والمجمعات' : 'Camps & Residences'}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === '/accommodation/companies'} tooltip="Client Companies">
+                  <Link href="/accommodation/companies" onClick={handleNavigate}>
+                    <Users />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {isAr ? 'الشركات والعملاء' : 'Client Companies'}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === '/accommodation/invoices'} tooltip="Invoices & Billing">
+                  <Link href="/accommodation/invoices" onClick={handleNavigate}>
+                    <Receipt />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {isAr ? 'الفواتير والمستحقات' : 'Accommodation Invoices'}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </div>
+          </SidebarMenu>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarUser currentUser={currentUser} loading={loading} />
+        </SidebarFooter>
+      </>
+    );
+  }
 
   if (isTimesheet) {
     return (

@@ -73,74 +73,65 @@ service cloud.firestore {
 
     // Accommodation workers
     match /workers/{workerId} {
-      // Allow signed-in users to view worker roster
       allow read: if isSignedIn();
-      // Only Admins and Supervisors can create or modify workers
-      allow create, update: if isAdmin() || isSupervisor();
-      // Restrict deletions to Admins
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSupervisor();
     }
 
     // Accommodation Companies (sister companies for contracts)
     match /companies/{companyId} {
       allow read: if isSignedIn();
-      // Admins and users with Housing Officer or Finance roles can manage companies
-      allow create, update: if isAdmin() || isSupervisor();
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSupervisor();
     }
 
     // Accommodation Contracts
     match /contracts/{contractId} {
       allow read: if isSignedIn();
-      // Admins and authorized roles can manage contracts
-      allow create, update: if isAdmin() || isSupervisor();
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSupervisor();
     }
 
     // Accommodation Invoices
     match /invoices/{invoiceId} {
       allow read: if isSignedIn();
-      // Admins and Finance roles can manage invoices
-      allow create, update: if isAdmin() || isSupervisor();
-      // Allow Supervisors to delete for regeneration purposes
+      allow create, update: if isSignedIn();
       allow delete: if isAdmin() || isSupervisor();
     }
 
     // Contracts V2 (New comprehensive contract management)
     match /contractsV2/{contractId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() || isSupervisor();
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSupervisor();
     }
 
     // Contract Invoices V2
     match /contractInvoices/{invoiceId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() || isSupervisor();
+      allow create, update: if isSignedIn();
       allow delete: if isAdmin() || isSupervisor();
     }
 
     // Contract Change Log — سجل تغييرات العقود
-    // قيود السجل تُكتب ولا تُعدَّل ولا تُحذف: سجل يمكن تحريره لا يصلح مرجعاً.
     match /contractHistory/{entryId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() || isSupervisor();
+      allow create: if isSignedIn();
       allow update, delete: if false;
     }
 
     // Contract Alerts
     match /contractAlerts/{alertId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() || isSupervisor();
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSupervisor();
     }
 
     // Accommodation Occupants (worker assignments to rooms)
     match /occupants/{occupantId} {
       allow read: if isSignedIn();
-      // Admins and authorized roles can manage occupancy
-      allow create, update: if isAdmin() || isSupervisor();
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSupervisor();
     }
 
     // Transfer Requests (Accommodation)

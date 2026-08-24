@@ -360,6 +360,7 @@ export interface ContractFormData {
   partyEmail?: string;
 
   linkedResidences: string[];
+  linkedResidenceNames?: string[];
   linkedBuildings?: string[];
   linkedUnits?: string[];
 

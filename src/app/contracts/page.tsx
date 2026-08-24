@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { formatHijriSubtext } from '@/lib/hijri-date-utils';
 import { ContractWizardDialog } from '@/components/contracts/ContractWizardDialog';
 import { MigrationPreviewDialog } from '@/components/contracts/MigrationPreviewDialog';
+import { EditLinkedResidencesDialog } from '@/components/contracts/EditLinkedResidencesDialog';
 import {
   type Contract, type ContractFormData, type ContractType, type ContractStatus,
   type BillingType, type ContractService, type PartyType, type RenewalType,
@@ -56,12 +57,41 @@ const typeIcons: Record<string, React.ReactNode> = {
   Wifi: <Wifi className="h-5 w-5" />,
 };
 
+// --- Reusable Widget Card (matches Dashboard) ---
+const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction }: { 
+  title: string; 
+  icon: any; 
+  children: React.ReactNode; 
+  href?: string; 
+  className?: string;
+  headerAction?: React.ReactNode;
+}) => (
+  <div className={cn("bg-white dark:bg-gray-800/80 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm flex flex-col", className)}>
+    <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+          <Icon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
+      </div>
+      {headerAction ? headerAction : href ? (
+        <Link href={href} className="text-gray-400 hover:text-indigo-500 transition-colors">
+          <ChevronRight className="w-5 h-5 rtl:rotate-180" />
+        </Link>
+      ) : null}
+    </div>
+    <div className="flex-1 flex flex-col">
+      {children}
+    </div>
+  </div>
+);
+
 export default function ContractsPage() {
   const {
     contracts, invoices, loading, stats,
     createContract, updateContract, deleteContract,
     renewContract, suspendContract, cancelContract, activateContract,
-    generateMonthlyInvoices, getInvoicesByContract,
+    generateMonthlyInvoices, getInvoicesByContract, updateInvoiceStatus,
     searchContracts, filterContracts, checkExpiringContracts,
     reconcileContractLifecycle,
   } = useContracts();
@@ -91,6 +121,8 @@ export default function ContractsPage() {
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   const [showMigration, setShowMigration] = useState(false);
   const [isExpiredOpen, setIsExpiredOpen] = useState(false);
+  const [residenceEditContract, setResidenceEditContract] = useState<Contract | null>(null);
+  const [openOwners, setOpenOwners] = useState<Record<string, boolean>>({});
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -344,37 +376,8 @@ export default function ContractsPage() {
     return labels[type];
   };
 
-// --- Reusable Widget Card (matches Dashboard) ---
-const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction }: { 
-  title: string; 
-  icon: any; 
-  children: React.ReactNode; 
-  href?: string; 
-  className?: string;
-  headerAction?: React.ReactNode;
-}) => (
-  <div className={cn("bg-white dark:bg-gray-800/80 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm flex flex-col", className)}>
-    <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
-          <Icon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-        </div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
-      </div>
-      {headerAction ? headerAction : href ? (
-        <Link href={href} className="text-gray-400 hover:text-indigo-500 transition-colors">
-          <ChevronRight className="w-5 h-5 rtl:rotate-180" />
-        </Link>
-      ) : null}
-    </div>
-    <div className="flex-1 flex flex-col">
-      {children}
-    </div>
-  </div>
-);
-
   // ---- Overview Cards ----
-  const OverviewCards = () => (
+  const renderOverviewCards = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       {/* Total Active Contracts */}
       <div className="bg-white dark:bg-gray-800/80 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50 hover:shadow-md transition-all flex flex-col gap-3">
@@ -489,7 +492,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   );
 
   // ---- Contract Type Distribution ----
-  const TypeDistribution = () => (
+  const renderTypeDistribution = () => (
     <WidgetCard
       title={c.contractTypeDistribution || (isAr ? 'توزيع أنواع العقود' : 'Contract Type Distribution')}
       icon={Layers}
@@ -526,7 +529,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   );
 
   // ---- Filters Bar ----
-  const FiltersBar = () => (
+  const renderFiltersBar = () => (
     <WidgetCard
       title={c.filterAndSearch || (isAr ? 'البحث والتصفية' : 'Filter & Search')}
       icon={Filter}
@@ -624,9 +627,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   );
 
   // ---- Grouped by Owner View (Collapsible Accordion Cards) ----
-  const GroupedByOwnerView = () => {
-    const [openOwners, setOpenOwners] = useState<Record<string, boolean>>({});
-
+  const renderGroupedByOwnerView = () => {
     const toggleOwner = (ownerName: string) => {
       setOpenOwners(prev => ({ ...prev, [ownerName]: !prev[ownerName] }));
     };
@@ -717,6 +718,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
                         <TableRow className="bg-muted/10 text-xs">
                           <TableHead>{c.contractAndType || 'Contract / Type'}</TableHead>
                           <TableHead>{isAr ? 'العلاقة' : 'Relation'}</TableHead>
+                          <TableHead>{c.residences || 'Residences'}</TableHead>
                           <TableHead>{c.duration || 'Duration'}</TableHead>
                           <TableHead>{c.value || 'Value'}</TableHead>
                           <TableHead>{c.status || 'Status'}</TableHead>
@@ -761,6 +763,48 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
                                     📄 {isAr ? 'عقد أساسي' : 'Primary'}
                                   </Badge>
                                 )}
+                              </TableCell>
+
+                              <TableCell>
+                                <div
+                                  onClick={() => setResidenceEditContract(contract)}
+                                  className="cursor-pointer group flex flex-wrap items-center gap-1 max-w-[180px] hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 p-1 rounded-lg transition-colors"
+                                  title={isAr ? 'اضغط لتعديل وتعيين السكنات' : 'Click to edit linked residences'}
+                                >
+                                  {(!contract.linkedResidences || contract.linkedResidences.length === 0) ? (
+                                    <Badge variant="outline" className="text-[10px] bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 border-dashed hover:bg-amber-100 flex items-center gap-0.5">
+                                      <Plus className="w-2.5 h-2.5" />
+                                      {isAr ? 'تعيين سكن' : 'Assign'}
+                                    </Badge>
+                                  ) : (
+                                    <>
+                                      {contract.linkedResidences.slice(0, 2).map(resId => {
+                                        const res = residences.find(r => r.id === resId);
+                                        const isRegistered = !!res;
+                                        return (
+                                          <Badge
+                                            key={resId}
+                                            variant="outline"
+                                            className={`text-[10px] py-0 px-1.5 ${
+                                              isRegistered
+                                                ? 'bg-slate-50 dark:bg-slate-800 border-slate-200 text-slate-800 dark:text-slate-200'
+                                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 border-rose-300'
+                                            }`}
+                                          >
+                                            {!isRegistered && <AlertTriangle className="w-2.5 h-2.5 mr-0.5 ml-0.5 inline text-rose-600" />}
+                                            {res?.name || resId}
+                                          </Badge>
+                                        );
+                                      })}
+                                      {contract.linkedResidences.length > 2 && (
+                                        <Badge variant="outline" className="text-[10px] py-0 px-1 bg-slate-50 border-slate-200">
+                                          +{contract.linkedResidences.length - 2}
+                                        </Badge>
+                                      )}
+                                      <Edit className="w-2.5 h-2.5 text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </>
+                                  )}
+                                </div>
                               </TableCell>
 
                               <TableCell>
@@ -827,6 +871,13 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
                                       <span>{isAr ? 'تعديل بيانات العقد' : 'Edit Contract'}</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
+                                      onClick={() => setResidenceEditContract(contract)}
+                                      className="flex items-center gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400 font-medium"
+                                    >
+                                      <Building2 className="h-4 w-4" />
+                                      <span>{isAr ? 'تعديل السكنات المرتبطة' : 'Edit Linked Residences'}</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
                                       onClick={() => {
                                         setSelectedContract(contract);
                                         setDialogMode('create');
@@ -879,10 +930,8 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
     );
   };
 
-  // شريط التبديل والإجراءات. كان مرسوماً داخل عرض الجدول فقط، فيختفي بمجرد
-  // الانتقال إلى «تجميع حسب المالك» ولا يبقى سبيل للعودة إلا بإعادة تحميل
-  // الصفحة. مشترك الآن بين العرضين.
-  const ListToolbar = () => (
+  // شريط التبديل والإجراءات.
+  const renderListToolbar = () => (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl text-xs">
         <button
@@ -1001,19 +1050,43 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
           </div>
         </TableCell>
         <TableCell>
-          <div className="flex flex-wrap gap-1 max-w-[200px]">
-            {contract.linkedResidences.slice(0, 3).map(resId => {
-              const res = residences.find(r => r.id === resId);
-              return (
-                <Badge key={resId} variant="outline" className="text-xs bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700">
-                  {res?.name || resId}
-                </Badge>
-              );
-            })}
-            {contract.linkedResidences.length > 3 && (
-              <Badge variant="outline" className="text-xs bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700">
-                +{contract.linkedResidences.length - 3}
+          <div
+            onClick={() => setResidenceEditContract(contract)}
+            className="cursor-pointer group flex flex-wrap items-center gap-1 max-w-[220px] hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 p-1.5 rounded-xl transition-colors"
+            title={isAr ? 'اضغط لتعديل وتعيين السكنات المرتبطة بهذا العقد' : 'Click to edit linked residences'}
+          >
+            {(!contract.linkedResidences || contract.linkedResidences.length === 0) ? (
+              <Badge variant="outline" className="text-xs bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 border-dashed hover:bg-amber-100 flex items-center gap-1">
+                <Plus className="w-3 h-3" />
+                {isAr ? 'تعيين سكن' : 'Assign Residence'}
               </Badge>
+            ) : (
+              <>
+                {contract.linkedResidences.slice(0, 3).map(resId => {
+                  const res = residences.find(r => r.id === resId);
+                  const isRegistered = !!res;
+                  return (
+                    <Badge
+                      key={resId}
+                      variant="outline"
+                      className={`text-xs ${
+                        isRegistered
+                          ? 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100'
+                          : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-300'
+                      }`}
+                    >
+                      {!isRegistered && <AlertTriangle className="w-2.5 h-2.5 mr-0.5 ml-0.5 inline text-rose-600" />}
+                      {res?.name || resId}
+                    </Badge>
+                  );
+                })}
+                {contract.linkedResidences.length > 3 && (
+                  <Badge variant="outline" className="text-xs bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700">
+                    +{contract.linkedResidences.length - 3}
+                  </Badge>
+                )}
+                <Edit className="w-3 h-3 text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
+              </>
             )}
           </div>
         </TableCell>
@@ -1094,6 +1167,13 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
                 <span>{isAr ? 'تعديل بيانات العقد' : 'Edit Contract'}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
+                onClick={() => setResidenceEditContract(contract)}
+                className="flex items-center gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400 font-medium"
+              >
+                <Building2 className="h-4 w-4" />
+                <span>{isAr ? 'تعديل السكنات المرتبطة' : 'Edit Linked Residences'}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={() => {
                   setSelectedContract(contract);
                   setDialogMode('create');
@@ -1156,7 +1236,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   };
 
   // ---- Contracts Table & Expired Folded Card ----
-  const ContractsTable = () => {
+  const renderContractsTable = () => {
     // Separate active/current contracts from expired contracts
     const activeContractsList = filterStatus === 'all' 
       ? filteredContracts.filter(c => c.status !== 'Expired')
@@ -1170,9 +1250,9 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
           <WidgetCard
             title={isAr ? 'سجل العقود حسب المالك' : 'Contracts by Owner'}
             icon={Building2}
-            headerAction={<ListToolbar />}
+            headerAction={renderListToolbar()}
           >
-            <GroupedByOwnerView />
+            {renderGroupedByOwnerView()}
           </WidgetCard>
         </div>
       );
@@ -1184,7 +1264,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
         <WidgetCard
           title={isAr ? 'سجل العقود السارية' : 'Active Contracts Directory'}
           icon={FileText}
-          headerAction={<ListToolbar />}
+          headerAction={renderListToolbar()}
           className="overflow-hidden"
         >
           {loading ? (
@@ -1290,8 +1370,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   };
 
   // ---- Invoices Tab ----
-  const InvoicesTab = () => {
-    const updateInvoiceStatus = useContracts().updateInvoiceStatus;
+  const renderInvoicesTab = () => {
     return (
       <WidgetCard
         title={c.invoices || (isAr ? 'الفواتير والمستحقات' : 'Invoices')}
@@ -1364,7 +1443,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
 
 
   // ---- Create/Edit Wizard Dialog ----
-  const ContractFormDialog = () => (
+  const renderContractFormDialog = () => (
     <ContractWizardDialog
       open={showForm}
       onOpenChange={setShowForm}
@@ -1387,7 +1466,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   );
 
   // ---- Renew Dialog ----
-  const RenewDialog = () => {
+  const renderRenewDialog = () => {
     const rd = c.renewDialog || {};
 
     const addExtension = (years: number, months: number = 0) => {
@@ -1505,7 +1584,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   };
 
   // ---- Reports Tab ----
-  const ReportsTab = () => (
+  const renderReportsTab = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <Card>
         <CardHeader>
@@ -1596,7 +1675,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   );
 
   // ---- Delete Confirmation Dialog ----
-  const DeleteDialog = () => {
+  const renderDeleteDialog = () => {
     const dd = c.deleteDialog || {};
     return (
     <Dialog open={dialogMode === 'delete'} onOpenChange={() => setDialogMode(null)}>
@@ -1628,7 +1707,7 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
   };
 
   // ---- Confirm Action Dialog (Suspend/Cancel/Activate) ----
-  const ConfirmActionDialog = () => {
+  const renderConfirmActionDialog = () => {
     const cd = c.confirmDialog || {};
     const handleConfirm = async () => {
       const { action, contractId } = confirmDialog;
@@ -1769,31 +1848,38 @@ const WidgetCard = ({ title, icon: Icon, children, href, className, headerAction
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <OverviewCards />
-          <TypeDistribution />
-          <FiltersBar />
-          <ContractsTable />
+          {renderOverviewCards()}
+          {renderTypeDistribution()}
+          {renderFiltersBar()}
+          {renderContractsTable()}
         </div>
       )}
 
       {activeTab === 'invoices' && (
         <div className="space-y-6">
-          <InvoicesTab />
+          {renderInvoicesTab()}
         </div>
       )}
 
       {activeTab === 'reports' && (
         <div className="space-y-6">
-          <ReportsTab />
+          {renderReportsTab()}
         </div>
       )}
 
       {/* Dialogs */}
-      <ContractFormDialog />
-      <RenewDialog />
-      <DeleteDialog />
-      <ConfirmActionDialog />
+      {renderContractFormDialog()}
+      {renderRenewDialog()}
+      {renderDeleteDialog()}
+      {renderConfirmActionDialog()}
       <MigrationPreviewDialog open={showMigration} onOpenChange={setShowMigration} />
+      <EditLinkedResidencesDialog
+        open={!!residenceEditContract}
+        onOpenChange={(open) => !open && setResidenceEditContract(null)}
+        contract={residenceEditContract}
+        residences={residences}
+        isAr={isAr}
+      />
     </div>
   );
 }

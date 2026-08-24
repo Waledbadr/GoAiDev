@@ -337,6 +337,32 @@ export function ContractWizardDialog({
     }));
   };
 
+  const handleSelectAllResidences = () => {
+    const allValidIds = residences.map(r => r.id);
+    setFormData(prev => ({
+      ...prev,
+      linkedResidences: allValidIds,
+    }));
+  };
+
+  const handleDeselectAllResidences = () => {
+    setFormData(prev => ({
+      ...prev,
+      linkedResidences: [],
+    }));
+  };
+
+  const handleCleanLegacyResidences = () => {
+    setFormData(prev => ({
+      ...prev,
+      linkedResidences: prev.linkedResidences.filter(id => residences.some(r => r.id === id)),
+    }));
+  };
+
+  const unregisteredResidences = useMemo(() => {
+    return formData.linkedResidences.filter(id => !residences.some(r => r.id === id));
+  }, [formData.linkedResidences, residences]);
+
   const setDuration = (months: number, years: number = 0) => {
     if (!formData.startDate) return;
 
@@ -404,7 +430,14 @@ export function ContractWizardDialog({
   const handleFinalSubmit = async (status: 'Active' | 'Draft' = 'Active') => {
     try {
       setIsSubmitting(true);
-      await onSubmit(formData, status);
+      const names = formData.linkedResidences.map(
+        id => residences.find(r => r.id === id)?.name || id
+      );
+      const finalPayload: ContractFormData = {
+        ...formData,
+        linkedResidenceNames: names,
+      };
+      await onSubmit(finalPayload, status);
       onOpenChange(false);
     } catch (err) {
       console.error('Failed to submit contract wizard:', err);
@@ -878,21 +911,125 @@ export function ContractWizardDialog({
 
               {/* Linked Residences */}
               <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-base font-bold">{isAr ? 'السكنات / العقارات المرتبطة:' : 'Linked Properties/Residences:'}</Label>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <Label className="text-base font-bold flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-primary" />
+                    {isAr ? 'السكنات / العقارات المرتبطة بالعقد:' : 'Linked Properties/Residences:'}
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSelectAllResidences}
+                      className="text-xs h-7 bg-background hover:bg-muted font-medium"
+                    >
+                      {isAr ? 'تحديد كل السكنات' : 'Select All'}
+                    </Button>
+                    {formData.linkedResidences.length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleDeselectAllResidences}
+                        className="text-xs h-7 text-rose-600 hover:text-rose-700 hover:bg-rose-50 font-medium"
+                      >
+                        {isAr ? 'إلغاء التحديد' : 'Clear'}
+                      </Button>
+                    )}
                   </div>
                 </div>
+
+                {/* Legacy / Unregistered IDs Alert */}
+                {unregisteredResidences.length > 0 && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-bold">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span>
+                          {isAr
+                            ? `يوجد (${unregisteredResidences.length}) اسم سكن قديم/غير مسجل مرتبط بهذا العقد!`
+                            : `Found (${unregisteredResidences.length}) legacy/unregistered residence name(s)!`}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCleanLegacyResidences}
+                        className="text-[11px] h-6 px-2 bg-amber-100 dark:bg-amber-950/50 hover:bg-amber-200 text-amber-900 dark:text-amber-200 border-amber-300 font-semibold"
+                      >
+                        <Trash2 className="w-3 h-3 ml-1" />
+                        {isAr ? 'إزالة الأسماء غير المسجلة' : 'Remove Legacy'}
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {unregisteredResidences.map(badId => (
+                        <Badge
+                          key={badId}
+                          variant="outline"
+                          className="bg-rose-50 text-rose-700 border-rose-300 text-[11px] py-0.5 px-2 flex items-center gap-1"
+                        >
+                          <span>⚠️ {badId}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleResidence(badId)}
+                            className="hover:text-rose-900"
+                            title={isAr ? 'إزالة' : 'Remove'}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Currently Selected Chips */}
+                {formData.linkedResidences.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] text-muted-foreground font-semibold block">
+                      {isAr ? 'السكنات المختارة حالياً:' : 'Selected Residences:'}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 p-2.5 bg-muted/40 rounded-xl border max-h-24 overflow-y-auto">
+                      {formData.linkedResidences.map(id => {
+                        const res = residences.find(r => r.id === id);
+                        return (
+                          <Badge
+                            key={id}
+                            variant="secondary"
+                            className="text-xs py-0.5 px-2 gap-1 bg-background border shadow-xs"
+                          >
+                            <Building2 className="w-3 h-3 text-primary" />
+                            <span className="font-medium">{res?.name || id}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleResidence(id)}
+                              className="text-muted-foreground hover:text-rose-600 transition-colors"
+                              title={isAr ? 'إلغاء' : 'Remove'}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Search Bar */}
                 <div className="relative">
                   <Search className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     value={residenceSearch}
                     onChange={(e) => setResidenceSearch(e.target.value)}
-                    placeholder={isAr ? 'بحث في السكنات...' : 'Search residences...'}
-                    className="pr-9 bg-background text-xs h-9"
+                    placeholder={isAr ? 'بحث في قائمة السكنات المعتمدة...' : 'Search registered residences...'}
+                    className="pr-9 bg-background text-xs h-9 rounded-xl"
                   />
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-40 overflow-y-auto p-1">
+
+                {/* Residences Checkboxes */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-44 overflow-y-auto p-1 border rounded-xl bg-muted/10">
                   {filteredResidences.map(res => {
                     const isChecked = formData.linkedResidences.includes(res.id);
                     return (
@@ -900,7 +1037,7 @@ export function ContractWizardDialog({
                         key={res.id}
                         className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${
                           isChecked
-                            ? 'border-primary bg-primary/10 text-primary font-semibold shadow-sm'
+                            ? 'border-primary bg-primary/10 text-primary font-semibold shadow-xs ring-1 ring-primary/20'
                             : 'border-border bg-card hover:bg-muted/50 text-muted-foreground'
                         }`}
                       >

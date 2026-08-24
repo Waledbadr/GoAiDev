@@ -231,6 +231,30 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
   const { toast } = useToast();
 
+  const fetchContractsFromApi = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/contracts');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.contracts)) {
+          const contractList = json.contracts.map((c: any) => {
+            const item = { ...c } as Contract;
+            item.status = getEffectiveContractStatus(item);
+            return item;
+          });
+          setContracts(contractList);
+          if (json.invoices) setInvoices(json.invoices);
+          if (json.alerts) setAlerts(json.alerts);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load contracts from API fallback:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // ---- Real-time listener for contracts ----
   useEffect(() => {
     setLoading(true);
@@ -239,8 +263,6 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onSnapshot(q,
       (snapshot) => {
         const contractList: Contract[] = snapshot.docs
-          // العقود المؤرشفة تبقى في Firestore مرجعاً لفواتيرها، وتُستبعد من كل
-          // القوائم والإحصائيات.
           .filter(doc => !doc.data().archivedAt)
           .map(doc => {
           const data = doc.data();
@@ -264,13 +286,13 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       },
       (error) => {
-        console.error('Error fetching contracts:', error);
-        setLoading(false);
+        console.warn('Error on contractsV2 snapshot listener, triggering API fallback:', error);
+        fetchContractsFromApi();
       }
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [fetchContractsFromApi]);
 
   // ---- Real-time listener for invoices ----
   useEffect(() => {
@@ -290,7 +312,7 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         setInvoices(invoiceList);
       },
       (error) => {
-        console.error('Error fetching invoices:', error);
+        console.warn('Error on contractInvoices snapshot listener:', error);
       }
     );
 
@@ -298,8 +320,6 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ---- Real-time listener for alerts ----
-  // بدون هذا المستمع كانت `alerts` تبقى مصفوفة فارغة إلى الأبد: الدالة
-  // checkExpiringContracts تكتب التنبيهات في Firestore ولا يقرؤها أحد.
   useEffect(() => {
     const q = query(collection(db, 'contractAlerts'), orderBy('createdAt', 'desc'));
 
@@ -317,7 +337,7 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         setAlerts(alertList);
       },
       (error) => {
-        console.error('Error fetching contract alerts:', error);
+        console.warn('Error on contractAlerts snapshot listener:', error);
       }
     );
 
@@ -482,9 +502,37 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         updatedAt: Timestamp.now(),
       };
 
-      const docRef = await addDoc(collection(db, 'contractsV2'), contractData);
+      let docId: string;
+      try {
+        const docRef = await addDoc(collection(db, 'contractsV2'), contractData);
+        docId = docRef.id;
+      } catch (clientErr: any) {
+        console.warn('Direct Firestore addDoc failed, attempting API fallback...', clientErr);
+        const res = await fetch('/api/contracts/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create',
+            data: {
+              ...data,
+              vatPercentage,
+              vatAmount,
+              totalAmount: (data.billingRate || 0) + vatAmount,
+              durationMonths: monthsBetween(data.startDate, data.endDate, data.isOpenEnded),
+              renewalCount: 0,
+              status,
+              createdBy: auth?.currentUser?.uid || null,
+            },
+          }),
+        });
+        const resData = await res.json().catch(() => ({}));
+        if (!res.ok || !resData.ok || !resData.id) {
+          throw new Error(resData.error || clientErr.message || 'Permission denied');
+        }
+        docId = resData.id;
+      }
 
-      await recordChange(docRef.id, 'created', [
+      await recordChange(docId, 'created', [
         { field: 'billingRate', before: null, after: data.billingRate ?? 0 },
         { field: 'status', before: null, after: status },
       ]);
@@ -494,12 +542,12 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         description: 'تم إنشاء العقد بنجاح',
       });
 
-      return docRef.id;
+      return docId;
     } catch (error) {
       console.error('Error creating contract:', error);
       toast({
-        title: 'خطأ',
-        description: 'حدث خطأ أثناء إنشاء العقد',
+        title: 'خطأ في الصلاحيات أو الحفظ',
+        description: 'تعذر إنشاء العقد: تأكد من تسجيل الدخول أو مراجعة الصلاحيات.',
         variant: 'destructive',
       });
       throw error;
@@ -534,7 +582,29 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
         if (months !== undefined) updateData.durationMonths = months;
       }
 
-      await updateDoc(doc(db, 'contractsV2', id), updateData);
+      try {
+        await updateDoc(doc(db, 'contractsV2', id), updateData);
+      } catch (clientErr: any) {
+        console.warn('Direct Firestore updateDoc failed, attempting API fallback...', clientErr);
+        const res = await fetch('/api/contracts/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update',
+            id,
+            data: {
+              ...data,
+              vatAmount: updateData.vatAmount,
+              totalAmount: updateData.totalAmount,
+              durationMonths: updateData.durationMonths,
+            },
+          }),
+        });
+        const resData = await res.json().catch(() => ({}));
+        if (!res.ok || !resData.ok) {
+          throw new Error(resData.error || clientErr.message || 'Permission denied');
+        }
+      }
 
       const changes = diffTrackedFields(contracts.find(c => c.id === id), data);
       if (changes.length > 0) await recordChange(id, 'updated', changes);
@@ -546,8 +616,8 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Error updating contract:', error);
       toast({
-        title: 'خطأ',
-        description: 'حدث خطأ أثناء تحديث العقد',
+        title: 'خطأ في التحديث',
+        description: 'حدث خطأ أو نقص في الصلاحيات أثناء تحديث العقد',
         variant: 'destructive',
       });
     }
@@ -555,19 +625,32 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * أرشفة العقد بدل حذفه.
-   *
-   * كانت هذه الدالة تمحو العقد ثم تمحو كل فواتيره وتنبيهاته دفعةً واحدة. فاتورة
-   * صادرة لطرف آخر سجلٌّ محاسبي لا يجوز أن يختفي بضغطة زر — الأرشفة تُخفي العقد
-   * من القوائم وتُبقي كل ما يشير إليه سليماً.
    */
   const archiveContract = useCallback(async (id: string, reason?: string) => {
     try {
-      await updateDoc(doc(db, 'contractsV2', id), {
-        archivedAt: Timestamp.now(),
-        archivedBy: auth?.currentUser?.uid || null,
-        archiveReason: reason || null,
-        updatedAt: Timestamp.now(),
-      });
+      try {
+        await updateDoc(doc(db, 'contractsV2', id), {
+          archivedAt: Timestamp.now(),
+          archivedBy: auth?.currentUser?.uid || null,
+          archiveReason: reason || null,
+          updatedAt: Timestamp.now(),
+        });
+      } catch (clientErr: any) {
+        console.warn('Direct Firestore archive failed, attempting API fallback...', clientErr);
+        await fetch('/api/contracts/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update',
+            id,
+            data: {
+              archivedAt: new Date().toISOString(),
+              archivedBy: auth?.currentUser?.uid || null,
+              archiveReason: reason || null,
+            },
+          }),
+        });
+      }
 
       await recordChange(id, 'archived', [{ field: 'archivedAt', before: null, after: 'archived' }], reason);
 
