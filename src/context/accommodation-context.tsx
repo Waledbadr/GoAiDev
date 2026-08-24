@@ -683,60 +683,18 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
   );
 
   const startWorkersListener = useCallback(async () => {
-    console.log('📡 [startWorkersListener] Called', {
-      hasDb: !!db,
-      firestoreDisabled: workersFirestoreDisabledRef.current,
-      hasExistingListener: !!workersUnsubRef.current
-    });
-
-    if (!db || workersFirestoreDisabledRef.current) {
-      console.log('⏭️ [startWorkersListener] Skipping (no DB or disabled)');
-      return;
-    }
-    if (workersUnsubRef.current) {
-      console.log('⏭️ [startWorkersListener] Skipping (listener already exists)');
-      return;
-    }
-
     try {
-      console.log('🧪 [startWorkersListener] Testing permissions with limit(1) query...');
-      await getDocs(query(collection(db, "workers"), limit(1)));
-      console.log('✅ [startWorkersListener] Permission test passed');
-    } catch (err) {
-      console.error('❌ [startWorkersListener] Permission test failed:', err);
-      handleWorkersSnapshotError(err);
-      return;
-    }
-
-    console.log('📻 [startWorkersListener] Setting up onSnapshot listener...');
-    const col = collection(db, "workers");
-    workersUnsubRef.current = onSnapshot(
-      col,
-      (snap) => {
-        console.log('📦 [startWorkersListener] Snapshot received:', snap.docs.length, 'documents');
-        workersPermissionWarnedRef.current = false;
-        const list: Worker[] = snap.docs.map((d) => {
-          const data = d.data();
-          const role = data?.role;
-          const normalizedRole: Worker["role"] = role === "Supervisor" || role === "Engineer" ? role : "Worker";
-          return {
-            id: d.id,
-            name: typeof data?.name === "string" ? data.name : "",
-            employeeId: typeof data?.employeeId === "string" ? data.employeeId : undefined,
-            idNumber: typeof data?.idNumber === "string" ? data.idNumber : undefined,
-            nationaliy: typeof data?.nationaliy === "string" ? data.nationaliy : "",
-            company: typeof data?.company === "string" ? data.company : undefined,
-            role: normalizedRole,
-          } satisfies Worker;
-        });
-        setWorkers(list);
+      const d1Workers = await d1Client.getDocs<Worker>('workers');
+      if (d1Workers && d1Workers.length > 0) {
+        setWorkers(d1Workers);
         try {
-          localStorage.setItem("ac_workers", JSON.stringify(list));
+          localStorage.setItem("ac_workers", JSON.stringify(d1Workers));
         } catch { }
-      },
-      handleWorkersSnapshotError
-    );
-  }, [handleWorkersSnapshotError]);
+      }
+    } catch (err) {
+      console.warn('D1 workers load error:', err);
+    }
+  }, []);
 
   function mapComplexToResidence(complex: any): Residence {
     return {
@@ -891,72 +849,23 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     let historyUnsub: Unsubscribe | null = null;
     let transfersUnsub: Unsubscribe | null = null;
 
-    unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        console.log('✅ [Firestore Listeners] Starting real-time listeners...');
-
-        // Companies listener
-        companiesUnsub = onSnapshot(
-          collection(db!, 'companies'),
-          (snap) => {
-            const list: Company[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as Company));
-            setCompanies(list);
-          },
-          (err) => console.error('Companies snapshot error:', err)
-        );
-
-        // Contracts listener
-        contractsUnsub = onSnapshot(
-          collection(db!, 'contracts'),
-          (snap) => {
-            const list: Contract[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as Contract));
-            setContracts(list);
-          },
-          (err) => console.error('Contracts snapshot error:', err)
-        );
-
-        // Invoices listener
-        invoicesUnsub = onSnapshot(
-          collection(db!, 'invoices'),
-          (snap) => {
-            const list: Invoice[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as Invoice));
-            setInvoices(list);
-          },
-          (err) => console.error('Invoices snapshot error:', err)
-        );
-
-        // Occupants listener - OPTIMIZED: ONLY ACTIVE OCCUPANTS
-        occupantsUnsub = onSnapshot(
-          query(collection(db!, 'occupants'), where('until', '==', null)),
-          (snap) => {
-            const list: Occupant[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-            setOccupants(list);
-          },
-          (err) => console.error('Occupants snapshot error:', err)
-        );
-
-        // DISABLED: Accommodation History listener (HUGE QUOTA DRAIN)
-        // historyUnsub = onSnapshot(
-        //   collection(db!, 'accommodationHistory'),
-        //   (snap) => {
-        //     const list: AccommodationHistory[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as AccommodationHistory));
-        //     setAccommodationHistory(list);
-        //   },
-        //   (err) => console.error('History snapshot error:', err)
-        // );
-
-        // Transfer Requests listener
-        transfersUnsub = onSnapshot(
-          collection(db!, 'transferRequests'),
-          (snap) => {
-            const list: TransferRequest[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as TransferRequest));
-            setTransferRequests(list);
-          },
-          (err) => console.error('Transfers snapshot error:', err)
-        );
-
+        console.log('✅ [D1 Engine] Loading data from Cloudflare D1...');
+        try {
+          const [d1Comp, d1Invoices, d1Transfers] = await Promise.all([
+            d1Client.getDocs<Company>('companies'),
+            d1Client.getDocs<Invoice>('invoices'),
+            d1Client.getDocs<TransferRequest>('transferRequests'),
+          ]);
+          if (d1Comp) setCompanies(d1Comp);
+          if (d1Invoices) setInvoices(d1Invoices);
+          if (d1Transfers) setTransferRequests(d1Transfers);
+        } catch (err) {
+          console.warn('D1 data fetch error:', err);
+        }
       } else {
-        console.log('🔓 [Firestore Listeners] User logged out, cleaning up...');
+        console.log('🔓 [D1 Engine] User logged out, cleaning up...');
         if (companiesUnsub) companiesUnsub();
         if (contractsUnsub) contractsUnsub();
         if (invoicesUnsub) invoicesUnsub();

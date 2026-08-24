@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useRef } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, Unsubscribe, addDoc, updateDoc, Timestamp, getDoc, getDocs, query, where, writeBatch, increment, runTransaction, orderBy, limit, getDocFromServer } from "firebase/firestore";
 import { onAuthStateChanged } from 'firebase/auth';
 import type { InventoryItem, InventoryTransaction } from './inventory-context';
@@ -122,31 +123,18 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         unsubscribeRef.current(); // Unsubscribe from previous listener
     }
     
-    if (!db) {
-      console.warn("Firebase not configured, loading mock orders");
-      setOrders([]); // Empty orders for now
-      setLoading(false);
-      return;
-    }
-    // Defer subscription until signed-in user is available
-    if (auth && !auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-    
     setLoading(true);
-
-    const ordersCollection = collection(db, "orders");
-    unsubscribeRef.current = onSnapshot(query(ordersCollection, orderBy("date", "desc")), (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
-      setOrders(ordersData);
+    try {
+      const d1Orders = await d1Client.getDocs<Order>('orders');
+      if (d1Orders && d1Orders.length > 0) {
+        setOrders(d1Orders);
+      }
+    } catch (e) {
+      console.warn('D1 orders fetch error:', e);
+    } finally {
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching orders:", error);
-      toast({ title: "Firestore Error", description: "Could not fetch orders data.", variant: "destructive" });
-      setLoading(false);
-    });
-  }, [toast]);
+    }
+  }, []);
 
   // Ensure we auto-subscribe once the user signs in (in case pages call before auth)
   useEffect(() => {

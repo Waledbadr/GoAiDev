@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useRef } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, Unsubscribe, getDocs, writeBatch, query, where, getDoc, updateDoc, runTransaction, increment, Timestamp, orderBy, addDoc, DocumentReference, DocumentData, DocumentSnapshot, collectionGroup, limit } from "firebase/firestore";
 import type { Firestore } from 'firebase/firestore';
 import { useUsers } from './users-context';
@@ -400,69 +401,29 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     isLoaded.current = true;
     setLoading(true);
 
-  inventoryUnsubscribeRef.current = onSnapshot(collection(db, "inventory"), (snapshot) => {
-      const inventoryData = snapshot.docs.map(doc => {
-          const data = doc.data();
-          const stockByResidence = data.stockByResidence || {};
-          // Ensure totalStock is a valid number, defaulting to 0 if not.
-      // Clamp any negative values when computing totals for safety/display
-      const totalStock = Object.values(stockByResidence).reduce((sum: number, current) => {
-        const num = Number(current);
-        const safe = isNaN(num) ? 0 : Math.max(0, num);
-        return sum + safe;
-      }, 0);
-          return {
-              id: doc.id,
-              ...data,
-              stock: totalStock,
-              stockByResidence: stockByResidence,
-          } as InventoryItem;
-      });
-      setItems(inventoryData);
-       const uniqueCategories = Array.from(new Set(inventoryData.map(item => item.category)));
-       if (categories.length === 0 && uniqueCategories.length > 0) {
-           const categoriesDocRef = doc(db!, "inventory-categories", "all-categories");
-           getDoc(categoriesDocRef).then(docSnap => {
-               if (!docSnap.exists()) {
-                   setDoc(categoriesDocRef, { names: uniqueCategories });
-               }
-           });
-       }
-      setLoading(false);
-    }, (error) => {
-        console.error("Error fetching inventory:", error);
-        toast({ title: "Firestore Error", description: "Could not fetch inventory data. Check your Firebase config and security rules.", variant: "destructive" });
+    async function loadFromD1() {
+      try {
+        const [d1Inv, d1Transfers, d1Audits] = await Promise.all([
+          d1Client.getDocs<InventoryItem>('inventory'),
+          d1Client.getDocs<StockTransfer>('stockTransfers'),
+          d1Client.getDocs<InventoryAudit>('inventoryAudits'),
+        ]);
+
+        if (d1Inv && d1Inv.length > 0) {
+          setItems(d1Inv);
+          const uniqueCategories = Array.from(new Set(d1Inv.map(item => item.category).filter(Boolean)));
+          if (uniqueCategories.length > 0) setCategories(uniqueCategories);
+        }
+        if (d1Transfers) setTransfers(d1Transfers);
+        if (d1Audits) setAudits(d1Audits);
+      } catch (err) {
+        console.warn('D1 inventory fetch error:', err);
+      } finally {
         setLoading(false);
-    });
-
-    categoriesUnsubscribeRef.current = onSnapshot(collection(db, "inventory-categories"), (snapshot) => {
-      if (snapshot.docs.length > 0) {
-        const categoriesData = snapshot.docs[0].data();
-        setCategories(categoriesData.names || []);
       }
-    }, (error) => {
-       console.error("Error fetching categories:", error);
-       toast({ title: "Firestore Error", description: "Could not fetch categories data.", variant: "destructive" });
-    });
-    
-    transfersUnsubscribeRef.current = onSnapshot(query(collection(db, 'stockTransfers'), orderBy('date', 'desc')), (snapshot) => {
-        const transfersData = snapshot.docs.map(doc => doc.data() as StockTransfer);
-        setTransfers(transfersData);
-    }, (error) => {
-        console.error("Error fetching transfers:", error);
-        toast({ title: "Firestore Error", description: "Could not fetch stock transfers.", variant: "destructive" });
-    });
-
-    auditsUnsubscribeRef.current = onSnapshot(query(collection(db, 'inventoryAudits'), orderBy('createdAt', 'desc')), (snapshot) => {
-        const auditsData = snapshot.docs.map(doc => doc.data() as InventoryAudit);
-        setAudits(auditsData);
-    }, (error) => {
-        console.error("Error fetching audits:", error);
-        toast({ title: "Firestore Error", description: "Could not fetch audits.", variant: "destructive" });
-    });
-
-
-  }, [toast, categories.length]);
+    }
+    loadFromD1();
+  }, []);
   
   useEffect(() => {
     loadInventory();

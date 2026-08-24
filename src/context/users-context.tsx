@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useRef } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, Unsubscribe, updateDoc, getDocs, getDoc } from "firebase/firestore";
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -120,36 +121,25 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
     isLoaded.current = true;
     setLoading(true);
 
-    const usersCollection = collection(db!, "users");
-    unsubscribeRef.current = onSnapshot(usersCollection, (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-      setUsers(usersData);
-      
-      const authUid = lastAuthUidRef.current;
-      const authEmail = auth?.currentUser?.email?.toLowerCase?.() || null;
-      const storedUserId = localStorage.getItem('currentUser');
-
-      const byUid = authUid ? usersData.find(u => u.id === authUid) : null;
-      const byEmail = authEmail ? usersData.find(u => (u.email || '').toLowerCase() === authEmail) : null;
-      const byStored = storedUserId ? usersData.find(u => u.id === storedUserId) : null;
-
-      const activeUser = byUid || byEmail || byStored || usersData[0] || null;
-
-      // Update current user if missing or changed
-      if (!currentUser || (activeUser && currentUser.id !== activeUser.id)) {
-        setCurrentUser(activeUser);
-        if (activeUser) {
-          try { localStorage.setItem('currentUser', activeUser.id); } catch {}
-          applyTheme(activeUser.themeSettings);
+    async function loadUsersFromD1() {
+      try {
+        const d1Users = await d1Client.getDocs<User>('users');
+        if (d1Users && d1Users.length > 0) {
+          setUsers(d1Users);
+          const activeUser = d1Users[0];
+          if (!currentUser && activeUser) {
+            setCurrentUser(activeUser);
+            try { localStorage.setItem('currentUser', activeUser.id); } catch {}
+          }
         }
+      } catch (e) {
+        console.warn('D1 users fetch error:', e);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching users:", error);
-      toast({ title: "Firestore Error", description: "Could not fetch users data.", variant: "destructive" });
-      setLoading(false);
-    });
-  }, [toast, currentUser]);
+    }
+    loadUsersFromD1();
+  }, [currentUser]);
 
   // Initialize users list depending on environment/auth
   useEffect(() => {

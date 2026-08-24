@@ -180,37 +180,6 @@ export function ContractsProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchContractsFromD1OrApi();
-    if (!db) return;
-
-    const q = query(collection(db, 'contractsV2'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const list: Contract[] = snapshot.docs
-          .filter((doc) => !doc.data().archivedAt)
-          .map((doc) => {
-            const data = doc.data();
-            const item = {
-              id: doc.id,
-              ...data,
-              startDate: fromTimestamp(data.startDate),
-              endDate: fromTimestamp(data.endDate),
-              createdAt: fromTimestamp(data.createdAt),
-              updatedAt: data.updatedAt ? fromTimestamp(data.updatedAt) : undefined,
-            } as Contract;
-            item.status = getEffectiveContractStatus(item);
-            return item;
-          });
-        setContracts(list);
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('Firestore snapshot error, continuing with D1 engine:', err);
-        fetchContractsFromD1OrApi();
-      }
-    );
-
-    return () => unsubscribe();
   }, [fetchContractsFromD1OrApi]);
 
   useEffect(() => {
