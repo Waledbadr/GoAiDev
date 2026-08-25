@@ -328,10 +328,6 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       });
     }
   };
-        variant: 'destructive',
-      });
-    }
-  };
 
   return (
     <TimesheetContext.Provider
