@@ -768,9 +768,6 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
 
     return () => {
       unsubscribeAuth();
-      if (unsubscribeSnapshot) {
-        unsubscribeSnapshot();
-      }
     };
   }, []);
 
