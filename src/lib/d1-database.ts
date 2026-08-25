@@ -106,6 +106,35 @@ class D1DatabaseEngine {
     return doc as T;
   }
 
+  public setDocumentsBatch<T = any>(collectionName: string, docs: T[]): number {
+    this.ensureInitialized();
+    let colMap = this.cache.get(collectionName);
+    if (!colMap) {
+      colMap = new Map<string, any>();
+      this.cache.set(collectionName, colMap);
+    }
+
+    const now = new Date().toISOString();
+    let count = 0;
+    for (const item of docs) {
+      if (!item) continue;
+      const docId = (item as any).id || `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const doc = {
+        ...item,
+        id: String(docId),
+        updatedAt: now,
+      };
+      if (!(doc as any).createdAt) (doc as any).createdAt = now;
+
+      colMap.set(String(docId), doc);
+      d1RemoteSync.enqueueSet(collectionName, String(docId), doc);
+      count++;
+    }
+
+    this.persist();
+    return count;
+  }
+
   public updateDocument<T = any>(collectionName: string, docId: string, updates: Partial<T>): T | null {
     this.ensureInitialized();
     const colMap = this.cache.get(collectionName);
@@ -143,7 +172,5 @@ class D1DatabaseEngine {
   }
 }
 
-// Global Singleton for Next.js
-const globalForD1 = globalThis as unknown as { d1Database: D1DatabaseEngine };
-export const d1Database = globalForD1.d1Database || new D1DatabaseEngine();
-if (process.env.NODE_ENV !== 'production') globalForD1.d1Database = d1Database;
+// Global instance
+export const d1Database = new D1DatabaseEngine();

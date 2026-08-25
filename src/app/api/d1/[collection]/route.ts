@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { d1Database } from '@/lib/d1-database';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+async function resolveCollection(context: any): Promise<string> {
+  const p = context?.params ? await context.params : null;
+  return p?.collection || context?.params?.collection || '';
+}
+
 // GET /api/d1/[collection]?id=...
-export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ collection: string }> }
-) {
-  const { collection } = await context.params;
+export async function GET(req: NextRequest, context: any) {
+  const collection = await resolveCollection(context);
+  if (!collection) {
+    return NextResponse.json({ ok: false, error: 'Collection required' }, { status: 400 });
+  }
+
   const { searchParams } = new URL(req.url);
   const docId = searchParams.get('id');
 
@@ -22,14 +31,26 @@ export async function GET(
   return NextResponse.json({ ok: true, docs, count: docs.length });
 }
 
-// POST /api/d1/[collection] (Create / Overwrite)
-export async function POST(
-  req: NextRequest,
-  context: { params: Promise<{ collection: string }> }
-) {
-  const { collection } = await context.params;
+// POST /api/d1/[collection] (Create / Overwrite / Batch)
+export async function POST(req: NextRequest, context: any) {
+  const collection = await resolveCollection(context);
+  if (!collection) {
+    return NextResponse.json({ ok: false, error: 'Collection required' }, { status: 400 });
+  }
+
   try {
     const body = await req.json();
+
+    // Check if batch payload
+    if (Array.isArray(body)) {
+      const count = d1Database.setDocumentsBatch(collection, body);
+      return NextResponse.json({ ok: true, batch: true, count });
+    }
+    if (body.docs && Array.isArray(body.docs)) {
+      const count = d1Database.setDocumentsBatch(collection, body.docs);
+      return NextResponse.json({ ok: true, batch: true, count });
+    }
+
     const docId = body.id || `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const saved = d1Database.setDocument(collection, docId, body);
     return NextResponse.json({ ok: true, id: docId, doc: saved });
@@ -39,11 +60,12 @@ export async function POST(
 }
 
 // PATCH /api/d1/[collection]?id=... (Partial Update)
-export async function PATCH(
-  req: NextRequest,
-  context: { params: Promise<{ collection: string }> }
-) {
-  const { collection } = await context.params;
+export async function PATCH(req: NextRequest, context: any) {
+  const collection = await resolveCollection(context);
+  if (!collection) {
+    return NextResponse.json({ ok: false, error: 'Collection required' }, { status: 400 });
+  }
+
   const { searchParams } = new URL(req.url);
   const docId = searchParams.get('id');
 
@@ -64,11 +86,12 @@ export async function PATCH(
 }
 
 // DELETE /api/d1/[collection]?id=...
-export async function DELETE(
-  req: NextRequest,
-  context: { params: Promise<{ collection: string }> }
-) {
-  const { collection } = await context.params;
+export async function DELETE(req: NextRequest, context: any) {
+  const collection = await resolveCollection(context);
+  if (!collection) {
+    return NextResponse.json({ ok: false, error: 'Collection required' }, { status: 400 });
+  }
+
   const { searchParams } = new URL(req.url);
   const docId = searchParams.get('id');
 

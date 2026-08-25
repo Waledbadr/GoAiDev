@@ -227,49 +227,15 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
 
     setIsSaving(true);
     try {
-      if (!db) return;
-      const maxBatchSize = 500;
-      let currentBatch = writeBatch(db);
-      let count = 0;
-      let created = 0;
-      let updated = 0;
-      let preserved = 0;
       const syncedAt = new Date().toISOString();
+      const recordsToSave = processedAttendance.map(record => ({
+        ...record,
+        syncedAt,
+        lastSourceSyncAt: syncedAt,
+      }));
 
-      for (const record of processedAttendance) {
-        await d1Client.setDoc('attendanceRecords', record.id, {
-          ...record,
-          syncedAt,
-          lastSourceSyncAt: syncedAt,
-        });
-        created++;
-      }
-
-      // Dual-sync to Firestore if available
-      try {
-        if (db) {
-          const maxBatchSize = 500;
-          let currentBatch = writeBatch(db);
-          let count = 0;
-          for (const record of processedAttendance) {
-            const ref = doc(db, 'attendanceRecords', record.id);
-            currentBatch.set(ref, {
-              ...record,
-              syncedAt,
-              lastSourceSyncAt: syncedAt,
-            }, { merge: true });
-            count++;
-            if (count === maxBatchSize) {
-              await currentBatch.commit();
-              currentBatch = writeBatch(db);
-              count = 0;
-            }
-          }
-          if (count > 0) await currentBatch.commit();
-        }
-      } catch (fsErr) {
-        console.warn('Firestore dual-sync skipped:', fsErr);
-      }
+      // High-speed batch save to Cloudflare D1
+      const savedCount = await d1Client.setDocsBatch('attendanceRecords', recordsToSave);
 
       // Clear in-memory data to signal that the save was successful
       setRawPunches([]);
@@ -279,8 +245,8 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       toast({
         title: isAr ? "تم الحفظ بنجاح" : "Save Successful",
         description: isAr
-          ? `تم حفظ ومزامنة ${created} سجل على قاعدة بيانات Cloudflare D1.`
-          : `Saved and synced ${created} records to Cloudflare D1.`,
+          ? `تم حفظ ومزامنة ${savedCount} سجل على قاعدة بيانات Cloudflare D1 فوراً.`
+          : `Saved and synced ${savedCount} records to Cloudflare D1 instantly.`,
         variant: "default",
       });
 

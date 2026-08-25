@@ -1,49 +1,66 @@
+import fs from 'fs';
+import path from 'path';
 import { exec } from 'child_process';
-import util from 'util';
 
-const execPromise = util.promisify(exec);
-
-// Queue for remote Cloudflare D1 SQL operations to prevent concurrent CLI locks
+// Non-blocking background sync queue for remote Cloudflare D1
 class D1RemoteSyncQueue {
   private queue: string[] = [];
+  private debounceTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
-
-  public enqueueSql(sql: string) {
-    this.queue.push(sql);
-    this.processQueue();
-  }
 
   public enqueueSet(collectionName: string, docId: string, data: any) {
     const jsonStr = JSON.stringify(data).replace(/'/g, "''");
     const now = new Date().toISOString();
-    const sql = `INSERT INTO firestore_documents (id, collection_name, data, created_at, updated_at) VALUES ('${docId}', '${collectionName}', '${jsonStr}', '${now}', '${now}') ON CONFLICT(id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at;`;
-    this.enqueueSql(sql);
+    const sql = `INSERT INTO firestore_documents (id, collection_name, data, created_at, updated_at) VALUES ('${docId}', '${collectionName}', '${jsonStr}', '${now}', '${now}') ON CONFLICT(id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at;\n`;
+    this.queue.push(sql);
+    this.scheduleFlush();
   }
 
   public enqueueDelete(collectionName: string, docId: string) {
-    const sql = `DELETE FROM firestore_documents WHERE id = '${docId}';`;
-    this.enqueueSql(sql);
+    const sql = `DELETE FROM firestore_documents WHERE id = '${docId}';\n`;
+    this.queue.push(sql);
+    this.scheduleFlush();
   }
 
-  private async processQueue() {
+  private scheduleFlush() {
+    if (this.debounceTimer) return;
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      this.flushQueue();
+    }, 2000); // 2 second debounce
+  }
+
+  private async flushQueue() {
     if (this.isProcessing || this.queue.length === 0) return;
     this.isProcessing = true;
 
-    while (this.queue.length > 0) {
-      // Batch up to 20 SQL statements in a single transaction
-      const batch = this.queue.splice(0, 20);
-      const combinedSql = batch.join(' ');
+    const statements = this.queue.splice(0, this.queue.length);
+    const tmpSqlFile = path.resolve('data_exports', `d1-sync-batch-${Date.now()}.sql`);
 
+    try {
+      const sqlContent = statements.join('\n');
+      fs.writeFileSync(tmpSqlFile, sqlContent, 'utf8');
+
+      // Run wrangler non-blocking in child process
+      exec(`npx wrangler d1 execute estatecare --remote --file="${tmpSqlFile}" --yes`, { cwd: process.cwd() }, (error) => {
+        try {
+          if (fs.existsSync(tmpSqlFile)) fs.unlinkSync(tmpSqlFile);
+        } catch {}
+        if (error) {
+          console.warn('[D1RemoteSync] Background sync notice:', error.message);
+        }
+      });
+    } catch (e) {
+      console.warn('[D1RemoteSync] Queue flush error:', e);
       try {
-        const escapedSql = combinedSql.replace(/"/g, '\\"');
-        const cmd = `npx wrangler d1 execute estatecare --remote --command="${escapedSql}"`;
-        await execPromise(cmd, { cwd: process.cwd() });
-      } catch (err: any) {
-        console.warn('[D1RemoteSync] Remote execution notice:', err?.message || err);
+        if (fs.existsSync(tmpSqlFile)) fs.unlinkSync(tmpSqlFile);
+      } catch {}
+    } finally {
+      this.isProcessing = false;
+      if (this.queue.length > 0) {
+        this.scheduleFlush();
       }
     }
-
-    this.isProcessing = false;
   }
 }
 

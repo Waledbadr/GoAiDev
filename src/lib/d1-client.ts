@@ -60,6 +60,21 @@ export const d1Client = {
   },
 
   /**
+   * Save multiple documents at once (High-performance Batch)
+   */
+  async setDocsBatch<T = any>(collectionName: string, docs: T[]): Promise<number> {
+    if (!docs || docs.length === 0) return 0;
+    const res = await fetch(`/api/d1/${collectionName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docs }),
+    });
+    if (!res.ok) throw new Error(`Failed to batch save to D1 (${res.status})`);
+    const json = await res.json();
+    return json.count || docs.length;
+  },
+
+  /**
    * Add a new document with auto-generated ID
    */
   async addDoc<T = any>(collectionName: string, data: T): Promise<string> {
