@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { db, auth } from "@/lib/firebase";
+import { d1Client } from "@/lib/d1-client";
 import {
   collection,
   onSnapshot,
@@ -99,52 +100,27 @@ export const ServiceOrdersProvider = ({ children }: { children: React.ReactNode 
 
   const load = useCallback(() => {
     if (isLoaded.current) return;
-    if (!db) {
-      setLoading(false);
-      toast({ title: "Config error", description: "Firebase not configured.", variant: "destructive" });
-      return;
-    }
-    // Wait for auth to satisfy Firestore rules
-    if (auth && !auth.currentUser) {
-      setLoading(false);
-      return;
-    }
     isLoaded.current = true;
     setLoading(true);
-  const fdb = db as Firestore;
-  const qRef = query(collection(fdb, "serviceOrders"), orderBy("dateCreated", "desc"));
-    subRef.current = onSnapshot(
-      qRef,
-      (snap) => {
-        const arr = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ServiceOrder[];
-        setServiceOrders(arr);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error fetching service orders:", err);
-        toast({ title: "Error", description: "Could not fetch service orders.", variant: "destructive" });
+
+    async function loadFromD1() {
+      try {
+        const d1Orders = await d1Client.getDocs<ServiceOrder>('serviceOrders');
+        if (d1Orders) {
+          setServiceOrders(d1Orders);
+        }
+      } catch (err) {
+        console.warn('D1 service orders fetch notice:', err);
+      } finally {
         setLoading(false);
       }
-    );
-  }, [toast]);
+    }
+
+    loadFromD1();
+  }, []);
 
   useEffect(() => {
     load();
-    const unsub = auth ? onAuthStateChanged(auth, (u) => {
-      if (u) {
-        if (!isLoaded.current) load();
-      } else {
-        subRef.current?.();
-        isLoaded.current = false;
-        setServiceOrders([]);
-        setLoading(false);
-      }
-    }) : undefined;
-    return () => {
-      subRef.current?.();
-      isLoaded.current = false;
-      unsub?.();
-    };
   }, [load]);
 
   const reserveNewSvcId = async (): Promise<string> => {

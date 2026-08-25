@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { collection, query, where, orderBy, doc, updateDoc, writeBatch, Timestamp, addDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import type { QueryDocumentSnapshot, DocumentData, Query } from 'firebase/firestore';
 import safeOnSnapshot from '@/lib/firestore-utils';
@@ -53,70 +54,24 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!db) {
-      setNotifications([]);
-      setLoading(false);
-      return;
+    async function loadNotificationsFromD1() {
+      try {
+        const d1Notifs = await d1Client.getDocs<any>('notifications');
+        if (d1Notifs) {
+          const userNotifs = currentUser?.id
+            ? d1Notifs.filter((n: any) => n.userId === currentUser.id || n.userEmail === currentUser.email)
+            : d1Notifs;
+          setNotifications(userNotifs);
+        }
+      } catch (err) {
+        console.warn('D1 notifications fetch notice:', err);
+      } finally {
+        setLoading(false);
+      }
     }
 
-    if (!currentUser?.id) {
-      setNotifications([]);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-  const authEmail = auth?.currentUser?.email || null;
-  const authUid = auth?.currentUser?.uid || null;
-    const baseCol = collection(db!, 'notifications');
-
-    // Subscribe by email when available AND also by userId to cover docs missing userEmail
-  const queries: Query<DocumentData, DocumentData>[] = [];
-    // Prefer email when available (most flexible with current rules)
-    if (authEmail) {
-      queries.push(query(baseCol, where('userEmail', '==', authEmail), orderBy('createdAt', 'desc')));
-    }
-    // Also add UID-based query strictly using auth.uid to satisfy rules
-    if (authUid) {
-      queries.push(query(baseCol, where('userId', '==', authUid), orderBy('createdAt', 'desc')));
-    }
-    if (queries.length === 0) {
-      setNotifications([]);
-      setLoading(false);
-      return;
-    }
-
-    const unsubscribers = queries.map((qry) =>
-      safeOnSnapshot(
-        qry,
-        (snapshot) => {
-          // Merge results from multiple listeners by id
-          const all = new Map<string, Notification>();
-          // Include existing to avoid flicker when second stream arrives later
-          for (const n of notifications) all.set(n.id, n);
-          for (const d of snapshot.docs) {
-            const data = d.data() as any;
-            const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : Timestamp.now();
-            all.set(d.id, { id: d.id, ...data, createdAt } as Notification);
-          }
-          // Sort by createdAt desc
-          const merged = Array.from(all.values()).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-          setNotifications(merged);
-          setLoading(false);
-        },
-        (error) => {
-          console.error('Error fetching notifications:', error);
-          toast({ title: 'Firestore Error', description: 'Could not fetch notifications.', variant: 'destructive' });
-          setLoading(false);
-        },
-        { retryOnClose: true }
-      )
-    );
-
-    return () => {
-      unsubscribers.forEach((u) => u());
-    };
-  }, [currentUser, toast]);
+    loadNotificationsFromD1();
+  }, [currentUser]);
 
   const addNotification = async (payload: NewNotificationPayload) => {
     if (!db) {

@@ -16,8 +16,9 @@ import { useInventory } from '@/context/inventory-context';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { useResidences } from '@/context/residences-context';
 import { ApprovalAttachmentDialog } from '@/components/inventory/approval-attachment-dialog';
-// Subscribe to Firestore document for real-time updates
+// Subscribe to D1 document for updates
 import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { doc, onSnapshot, getDoc, collection, query as fbQuery, where, getDocs, updateDoc, orderBy, limit } from 'firebase/firestore';
 
 export default function OrderDetailPage() {
@@ -119,33 +120,26 @@ export default function OrderDetailPage() {
         return [];
     };
 
-    // Real-time subscription to keep page in sync without hard refresh
     useEffect(() => {
-        if (!db || typeof id !== 'string') return;
+        if (typeof id !== 'string') return;
         setLoading(true);
-        const ref = doc(db, 'orders', id);
-        const unsub = onSnapshot(ref, (snap) => {
-            if (snap.exists()) {
-                const data = snap.data() as any;
-                // Ensure items is always an array
-                const itemsArray = normalizeItems(data.items);
-                const normalizedData = { ...data, items: itemsArray };
-                // Attempt a one-time self-repair if the document has items as a numeric-keyed map
-                try {
-                    if (!Array.isArray(data.items) && Array.isArray(itemsArray) && itemsArray.length > 0) {
-                        updateDoc(ref, { items: itemsArray } as any).catch(() => {});
-                    }
-                } catch {}
-                setOrder({ id: snap.id, ...normalizedData } as Order);
-            } else {
-                setOrder(null);
+        async function fetchOrder() {
+            try {
+                const data = await d1Client.getDoc<any>('orders', id);
+                if (data) {
+                    const itemsArray = normalizeItems(data.items);
+                    const normalizedData = { ...data, items: itemsArray };
+                    setOrder({ id, ...normalizedData } as Order);
+                } else {
+                    setOrder(null);
+                }
+            } catch (err) {
+                console.error('Error fetching order doc from D1:', err);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
-        }, (err) => {
-            console.error('Error listening to order doc:', err);
-            setLoading(false);
-        });
-        return () => unsub();
+        }
+        fetchOrder();
     }, [id]);
 
     const handlePrint = () => {

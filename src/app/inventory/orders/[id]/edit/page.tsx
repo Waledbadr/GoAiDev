@@ -24,6 +24,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { normalizeText, includesNormalized } from '@/lib/utils';
 import { AR_SYNONYMS, buildNormalizedSynonyms } from '@/lib/aliases';
 import { useLanguage } from '@/context/language-context';
+import { d1Client } from '@/lib/d1-client';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { QuantityStepper } from '@/components/ui/quantity-stepper';
@@ -328,60 +329,32 @@ export default function EditOrderPage() {
     
     // Seed initial data promptly via a one-time fetch, then keep in sync via onSnapshot
     useEffect(() => {
-        let unsub: (() => void) | null = null;
         let isMounted = true;
         (async () => {
-            if (!db || typeof id !== 'string') { setPageLoading(false); return; }
             try {
-                // Immediate fetch to populate without hard refresh
-                const first = await getOrderById(id as string);
-                if (first && isMounted) {
-                    setOrder(first);
+                const data = await d1Client.getDoc<any>('orders', id as string);
+                if (data && isMounted) {
+                    const orderData = { id: id as string, ...data } as Order;
+                    setOrder(orderData);
                     const hasItemsNow = orderItemsRef.current && orderItemsRef.current.length > 0;
                     if (!hasItemsNow) {
-                        setOrderItems(first.items || []);
+                        setOrderItems(orderData.items || []);
                     }
-                    setResidenceName(first.residence || '');
-                    setResidenceId(first.residenceId || '');
+                    setResidenceName(orderData.residence || '');
+                    setResidenceId(orderData.residenceId || '');
                     if (!isDraftDirtyRef.current && !(hasMeaningfulDraftRef.current && (generalNotesRef.current?.trim().length > 0))) {
-                        setGeneralNotes(first.notes || '');
+                        setGeneralNotes(orderData.notes || '');
                     }
-                    setStatus(first.status);
-                    setPageLoading(false);
+                    setStatus(orderData.status);
                 }
             } catch (e) {
-                console.warn('Initial fetch failed, relying on snapshot:', e);
-            }
-
-            // Live subscription
-            const ref = doc(db, 'orders', id as string);
-            unsub = onSnapshot(ref, (snap) => {
-                if (!snap.exists()) {
-                    if (isMounted) setPageLoading(false);
-                    return;
-                }
-                const data = { id: snap.id, ...(snap.data() as any) } as Order;
-                if (!isMounted) return;
-                setOrder(data);
-
-                const hasItemsNow = orderItemsRef.current && orderItemsRef.current.length > 0;
-                if (!hasItemsNow) {
-                    setOrderItems(data.items || []);
-                }
-                setResidenceName(data.residence || '');
-                setResidenceId(data.residenceId || '');
-                if (!isDraftDirtyRef.current && !(hasMeaningfulDraftRef.current && (generalNotesRef.current?.trim().length > 0))) {
-                    setGeneralNotes(data.notes || '');
-                }
-                setStatus(data.status);
-                setPageLoading(false);
-            }, (err) => {
-                console.error('Error listening to order in edit page:', err);
+                console.warn('D1 order fetch in edit page error:', e);
+            } finally {
                 if (isMounted) setPageLoading(false);
-            });
+            }
         })();
-        return () => { isMounted = false; if (unsub) unsub(); };
-    }, [id, getOrderById]);
+        return () => { isMounted = false; };
+    }, [id]);
 
     // Autosave draft in edit page: debounce + interval + visibility change
     useEffect(() => {

@@ -748,26 +748,20 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
 
     if (!_auth || !_db) return;
 
-    let unsubscribeSnapshot: Unsubscribe | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(_auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(_auth, async (user) => {
       if (user) {
-        setLoading(true);
-        unsubscribeSnapshot = onSnapshot(collection(_db, "residences"), (snapshot) => {
-          const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          // Filter out disabled residences
-          const activeDocs = docs.filter((d: any) => !d.disabled);
-          setResidences(activeDocs.map(mapComplexToResidence));
+        try {
+          const d1Res = await d1Client.getDocs<any>('residences');
+          if (d1Res && d1Res.length > 0) {
+            const activeDocs = d1Res.filter((d: any) => !d.disabled);
+            setResidences(activeDocs.map(mapComplexToResidence));
+          }
+        } catch (e) {
+          console.warn("Accommodation: D1 residences load error", e);
+        } finally {
           setLoading(false);
-        }, (error) => {
-          console.warn("Accommodation: Firestore snapshot error, using D1 database instead", error);
-          setLoading(false);
-        });
-      } else {
-        if (unsubscribeSnapshot) {
-          unsubscribeSnapshot();
-          unsubscribeSnapshot = null;
         }
+      } else {
         setLoading(false);
       }
     });

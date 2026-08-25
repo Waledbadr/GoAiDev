@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useRef } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { collection, onSnapshot, doc, setDoc, Unsubscribe, addDoc, updateDoc, Timestamp, getDocs, query, where, deleteDoc, runTransaction } from "firebase/firestore";
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -84,65 +85,27 @@ export const MaintenanceProvider = ({ children }: { children: ReactNode }) => {
 
   const loadRequests = useCallback(() => {
     if (isLoaded.current) return;
-
-    if (!db) {
-      // Local fallback
-      const localData = loadFromLocalStorage();
-      setRequests(localData);
-      setLoading(false);
-      isLoaded.current = true;
-      return;
-    }
-    
-    // Defer until user is signed in to satisfy security rules
-    if (auth && !auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-
     isLoaded.current = true;
     setLoading(true);
 
-    const requestsCollection = collection(db, "maintenanceRequests");
-    unsubscribeRef.current = onSnapshot(requestsCollection, (snapshot) => {
-      const requestsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MaintenanceRequest));
-      requestsData.sort((a, b) => b.date.toMillis() - a.date.toMillis());
-      setRequests(requestsData);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching maintenance requests:", error);
-      toast({ title: "Firestore Error", description: "Could not fetch maintenance requests data.", variant: "destructive" });
-      setLoading(false);
-    });
-  }, [toast]);
+    async function loadFromD1() {
+      try {
+        const d1Reqs = await d1Client.getDocs<MaintenanceRequest>('maintenanceRequests');
+        if (d1Reqs) {
+          setRequests(d1Reqs);
+        }
+      } catch (err) {
+        console.warn('D1 maintenance requests fetch notice:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadFromD1();
+  }, []);
 
   useEffect(() => {
-    // Automatically load requests when the provider mounts
     loadRequests();
-    // and when auth changes to signed-in
-    let unsubAuth: (() => void) | undefined;
-    if (auth) {
-      unsubAuth = onAuthStateChanged(auth, (u) => {
-        if (u) {
-          if (!isLoaded.current) loadRequests();
-        } else {
-          if (unsubscribeRef.current) {
-            try { unsubscribeRef.current(); } catch {}
-            unsubscribeRef.current = null;
-          }
-          isLoaded.current = false;
-          setRequests([]);
-          setLoading(false);
-        }
-      });
-    }
-    return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        isLoaded.current = false;
-      }
-      unsubAuth?.();
-    };
   }, [loadRequests]);
 
   const generateNewRequestId = async (): Promise<string> => {
