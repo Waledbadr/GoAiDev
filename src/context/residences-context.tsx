@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useCallback, useRef, useEffect, useMemo } from 'react';
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { collection, doc, setDoc, deleteDoc, updateDoc, arrayUnion, arrayRemove, Unsubscribe, getDoc, getDocs } from "firebase/firestore";
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import safeOnSnapshot from '@/lib/firestore-utils';
@@ -193,47 +194,26 @@ export const ResidencesProvider = ({ children }: { children: ReactNode }) => {
 
   const loadResidences = useCallback(() => {
     if (isLoaded.current) return;
-    
-    if (!db) {
-        console.log("Firebase not configured, using local storage");
-        
-        // Load from localStorage
-        try {
-            const storedResidences = localStorage.getItem('estatecare_residences');
-            const residencesData = storedResidences ? JSON.parse(storedResidences) : [];
-            setResidences(residencesData);
-        } catch (error) {
-            console.error("Error loading from localStorage:", error);
-            setResidences([]);
-        }
-        
-        setLoading(false);
-        isLoaded.current = true;
-        return;
-    }
-    
-    // If Firebase is configured but user isn't signed in yet, defer loading until auth is ready
-    if (auth && !auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-
     isLoaded.current = true;
     setLoading(true);
 
-    const residencesCollection = collection(db, "residences");
-
-    // Use safeOnSnapshot to provide clearer logs and a single retry on transient watch closures
-  unsubscribeRef.current = safeOnSnapshot(residencesCollection, (snapshot) => {
-    const residencesData = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({ id: doc.id, ...doc.data() } as Complex));
-    setResidences(residencesData);
-    setLoading(false);
-  }, (error) => {
-      console.error("Error fetching residences:", error);
-      toast({ title: "Firestore Error", description: "Could not fetch residences data. Check your Firebase config and security rules.", variant: "destructive" });
-      setLoading(false);
-    }, { retryOnClose: true });
-  }, [toast]);
+    async function loadFromD1() {
+      try {
+        const d1Res = await d1Client.getDocs<Complex>('residences');
+        if (d1Res && d1Res.length > 0) {
+          setResidences(d1Res);
+          try {
+            localStorage.setItem('estatecare_residences', JSON.stringify(d1Res));
+          } catch {}
+        }
+      } catch (error) {
+        console.warn('D1 residences load error:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadFromD1();
+  }, []);
 
    useEffect(() => {
     // Try once on mount (will no-op if waiting for auth)

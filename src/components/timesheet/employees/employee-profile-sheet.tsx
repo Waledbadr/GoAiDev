@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HousingEmployee, useHousingEmployees } from '@/context/housing-employees-context';
@@ -59,10 +58,42 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
     reason: ''
   });
 
+  const loadSubData = async () => {
+    if (!employee) return;
+    try {
+      const [allLeaves, allTransfers, allExceptions] = await Promise.all([
+        d1Client.getDocs<any>('timesheetLeaves'),
+        d1Client.getDocs<any>('timesheetTransfers'),
+        d1Client.getDocs<any>('timesheetExceptions'),
+      ]);
+
+      const empLeaves = (allLeaves || []).filter(l => l.employeeId === employee.id || l.employeeDocId === employee.id || l.badgeId === employee.employeeId);
+      const empTransfers = (allTransfers || []).filter(t => t.employeeId === employee.id || t.badgeId === employee.employeeId);
+      const empExceptions = (allExceptions || []).filter(e => e.employeeId === employee.id || e.badgeId === employee.employeeId);
+
+      setLeaves(empLeaves);
+      setTransfers(empTransfers);
+      setExceptions(empExceptions);
+    } catch (e) {
+      console.warn('Error loading employee subdata from D1:', e);
+    }
+  };
+
   // Reset local state when employee or defaultDate changes
   useEffect(() => {
     if (employee) {
-      setGeneralData(employee);
+      setGeneralData({
+        name: employee.name || '',
+        nameAr: employee.nameAr || '',
+        employeeId: employee.employeeId || '',
+        profession: employee.profession || '',
+        professionAr: employee.professionAr || '',
+        dailyHours: employee.dailyHours || 8,
+        monthlySalary: employee.monthlySalary || 0,
+        status: employee.status || 'Active',
+        residenceStatus: employee.residenceStatus || 'Inside',
+        residenceLocation: employee.residenceLocation || '',
+      });
       setShowLeaveForm(false);
       setShowTransferForm(false);
       setShowExceptionForm(false);
@@ -86,49 +117,7 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
         setExceptionData({ type: 'Permission', startDate: '', endDate: '', hours: '', reason: '' });
       }
       
-      const sortByDateOrCreated = (items: any[]) => {
-        return items.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis?.() || (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0) || (typeof a.createdAt === 'string' ? new Date(a.createdAt).getTime() : 0) || (a.date ? new Date(a.date).getTime() : 0);
-          const timeB = b.createdAt?.toMillis?.() || (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0) || (typeof b.createdAt === 'string' ? new Date(b.createdAt).getTime() : 0) || (b.date ? new Date(b.date).getTime() : 0);
-          return timeB - timeA;
-        });
-      };
-
-      // Fetch Leaves
-      const qLeaves = query(
-        collection(db, 'timesheetLeaves'),
-        where('employeeId', '==', employee.id)
-      );
-      const unsubLeaves = onSnapshot(qLeaves, (snap) => {
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setLeaves(sortByDateOrCreated(items));
-      }, (err) => console.warn('Leaves subscription notice:', err));
-
-      // Fetch Transfers
-      const qTransfers = query(
-        collection(db, 'timesheetTransfers'),
-        where('employeeId', '==', employee.id)
-      );
-      const unsubTransfers = onSnapshot(qTransfers, (snap) => {
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setTransfers(sortByDateOrCreated(items));
-      }, (err) => console.warn('Transfers subscription notice:', err));
-
-      // Fetch Exceptions
-      const qExceptions = query(
-        collection(db, 'timesheetExceptions'),
-        where('employeeId', '==', employee.id)
-      );
-      const unsubExceptions = onSnapshot(qExceptions, (snap) => {
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setExceptions(sortByDateOrCreated(items));
-      }, (err) => console.warn('Exceptions subscription notice:', err));
-
-      return () => {
-        unsubLeaves();
-        unsubTransfers();
-        unsubExceptions();
-      };
+      loadSubData();
     }
   }, [employee, defaultDate]);
 
@@ -162,13 +151,15 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
     }
     try {
       setLoading(true);
-      await addDoc(collection(db, 'timesheetLeaves'), {
+      const newId = `leave_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await d1Client.setDoc('timesheetLeaves', newId, {
+        id: newId,
         employeeId: employee.id,
         badgeId: employee.employeeId,
         name: employee.name,
         nameAr: employee.nameAr,
         ...leaveData,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       });
       // Optionally update employee status
       if (new Date() >= new Date(leaveData.startDate) && new Date() <= new Date(leaveData.endDate)) {
@@ -176,6 +167,7 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
       }
       setShowLeaveForm(false);
       setLeaveData({ type: 'Annual', startDate: '', endDate: '', reason: '' });
+      await loadSubData();
       toast({ title: 'Success', description: 'Leave recorded' });
     } catch(err) {
       console.error(err);
@@ -193,13 +185,15 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
     }
     try {
       setLoading(true);
-      await addDoc(collection(db, 'timesheetTransfers'), {
+      const newId = `transfer_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await d1Client.setDoc('timesheetTransfers', newId, {
+        id: newId,
         employeeId: employee.id,
         badgeId: employee.employeeId,
         name: employee.name,
         nameAr: employee.nameAr,
         ...transferData,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       });
       
       // Update employee location status
@@ -211,6 +205,7 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
       
       setShowTransferForm(false);
       setTransferData({ type: 'Move In', date: '', location: '', reason: '' });
+      await loadSubData();
       toast({ title: 'Success', description: 'Transfer recorded' });
     } catch(err) {
       console.error(err);
@@ -228,18 +223,21 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
     }
     try {
       setLoading(true);
-      await addDoc(collection(db, 'timesheetExceptions'), {
+      const newId = `exc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await d1Client.setDoc('timesheetExceptions', newId, {
+        id: newId,
         employeeId: employee.id,
         badgeId: employee.employeeId,
         name: employee.name,
         nameAr: employee.nameAr,
         ...exceptionData,
         hours: Number(exceptionData.hours || 0),
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       });
 
       setShowExceptionForm(false);
       setExceptionData({ type: 'Permission', startDate: '', endDate: '', hours: '', reason: '' });
+      await loadSubData();
       toast({ title: 'Success / تم بنجاح', description: 'Exception recorded / تم تسجيل الاستثناء بنجاح' });
     } catch(err) {
       console.error(err);
@@ -253,7 +251,8 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
   const deleteException = async (id: string) => {
     try {
       setLoading(true);
-      await deleteDoc(doc(db, 'timesheetExceptions', id));
+      await d1Client.deleteDoc('timesheetExceptions', id);
+      await loadSubData();
       toast({ title: 'Deleted / تم الحذف', description: 'Exception removed / تم حذف الاستثناء' });
     } catch(err) {
       console.error(err);

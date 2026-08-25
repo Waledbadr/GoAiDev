@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { collection, getDocs, doc, setDoc, query, orderBy, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -111,12 +110,9 @@ function TimesheetEmployeesContent() {
   const handleSyncFromRecords = async () => {
     try {
       setSyncing(true);
-      // Fetch only the most recent attendance records to significantly reduce read costs
-      const q = query(collection(db as any, 'attendanceRecords'), orderBy('date', 'desc'), limit(1000));
-      const snapshot = await getDocs(q);
+      const records = await d1Client.getDocs<any>('attendanceRecords');
       const uniqueMap = new Map<string, any>();
-      snapshot.forEach(d => {
-        const data = d.data();
+      (records || []).forEach(data => {
         if (data.employeeId && !uniqueMap.has(data.employeeId)) {
           uniqueMap.set(data.employeeId, {
             employeeId: data.employeeId,
@@ -137,9 +133,9 @@ function TimesheetEmployeesContent() {
       for (const [empId, empData] of uniqueMap.entries()) {
         const existing = employees.find(e => e.employeeId === empId);
         if (!existing) {
-          const docRef = doc(collection(db as any, 'housingEmployees'));
-          await setDoc(docRef, {
-            id: docRef.id,
+          const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          await d1Client.setDoc('housingEmployees', docId, {
+            id: docId,
             ...empData,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()

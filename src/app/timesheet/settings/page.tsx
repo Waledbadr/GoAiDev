@@ -1,3 +1,5 @@
+'use client';
+
 import { TimesheetProvider } from "@/context/timesheet-context";
 import { TimesheetSettings } from "@/components/timesheet/timesheet-settings";
 

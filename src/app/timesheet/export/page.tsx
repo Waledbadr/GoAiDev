@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { d1Client } from '@/lib/d1-client';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Download, Users, FileText, Ban, CircleCheckBig } from 'lucide-react';
@@ -119,43 +120,17 @@ function TimesheetDailyExportContent() {
   };
 
   const loadDayData = async () => {
-    if (!db) return null;
-
     setIsLoading(true);
     try {
-      const now = Date.now();
-      const needsLeavesFetch = !cachedLeaves || (now - lastLeavesFetch > AUX_CACHE_TTL);
-      const needsTransfersFetch = !cachedTransfers || (now - lastTransfersFetch > AUX_CACHE_TTL);
+      const [allAttendance, allLeaves, allTransfers] = await Promise.all([
+        d1Client.getDocs<any>('attendanceRecords'),
+        d1Client.getDocs<any>('timesheetLeaves'),
+        d1Client.getDocs<any>('timesheetTransfers'),
+      ]);
 
-      const promises: Promise<any>[] = [
-        getDocs(query(collection(db as any, 'attendanceRecords'), where('date', '==', selectedDateLabel)))
-      ];
-
-      if (needsLeavesFetch) {
-        promises.push(getDocs(collection(db as any, 'timesheetLeaves')));
-      }
-      if (needsTransfersFetch) {
-        promises.push(getDocs(collection(db as any, 'timesheetTransfers')));
-      }
-
-      const results = await Promise.all(promises);
-      const attendanceSnap = results[0];
-      let resIdx = 1;
-
-      if (needsLeavesFetch) {
-        const leavesSnap = results[resIdx++];
-        cachedLeaves = leavesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-        lastLeavesFetch = now;
-      }
-      if (needsTransfersFetch) {
-        const transfersSnap = results[resIdx++];
-        cachedTransfers = transfersSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-        lastTransfersFetch = now;
-      }
-
-      const attendanceRecords = attendanceSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-      const leaveRecords = cachedLeaves || [];
-      const transferRecords = cachedTransfers || [];
+      const attendanceRecords = (allAttendance || []).filter(r => r.date === selectedDateLabel);
+      const leaveRecords = allLeaves || [];
+      const transferRecords = allTransfers || [];
 
       const activeEmployees = employees.filter((employee) => isExportableEmployee(employee));
 

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, ReactNode } from "react";
 import { RawPunch, DailyAttendance, TimesheetEvent, EmployeeSchedule } from "@/types/timesheet";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
+import { d1Client } from "@/lib/d1-client";
 import { doc, writeBatch, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { mergeAttendanceRecord, processPunches } from "@/utils/timesheet-utils";
 import { useLanguage } from "@/context/language-context";
@@ -52,18 +53,28 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
   const { locale } = useLanguage();
   const isAr = locale === "ar";
   
-  // Load mappings on mount
+  // Load mappings on mount from Cloudflare D1
   React.useEffect(() => {
     const loadMapping = async () => {
       try {
-        if (!db) return;
-        const snap = await getDoc(doc(db, "residences", "timesheetSettings"));
-        if (snap.exists()) {
-          const data = snap.data();
-          setDeviceToProjectMap(data.deviceToProjectMap || {});
-          setProjectToResidenceMap(data.projectToResidenceMap || {});
-          setTimesheetEvents(data.timesheetEvents || []);
-          setEmployeeSchedules(data.employeeSchedules || []);
+        const d1Settings = await d1Client.getDoc<any>('residences', 'timesheetSettings');
+        if (d1Settings) {
+          setDeviceToProjectMap(d1Settings.deviceToProjectMap || {});
+          setProjectToResidenceMap(d1Settings.projectToResidenceMap || {});
+          setTimesheetEvents(d1Settings.timesheetEvents || []);
+          setEmployeeSchedules(d1Settings.employeeSchedules || []);
+          return;
+        }
+
+        if (db) {
+          const snap = await getDoc(doc(db, "residences", "timesheetSettings"));
+          if (snap.exists()) {
+            const data = snap.data();
+            setDeviceToProjectMap(data.deviceToProjectMap || {});
+            setProjectToResidenceMap(data.projectToResidenceMap || {});
+            setTimesheetEvents(data.timesheetEvents || []);
+            setEmployeeSchedules(data.employeeSchedules || []);
+          }
         }
       } catch (e) {
         console.error("Failed to load timesheet settings", e);
@@ -73,52 +84,45 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateDeviceMapping = async (deviceName: string, projectName: string) => {
-    if (!db) return;
     const newMap = { ...deviceToProjectMap, [deviceName]: projectName };
     setDeviceToProjectMap(newMap);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { deviceToProjectMap: newMap }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { deviceToProjectMap: newMap });
   };
 
   const updateBulkDeviceMappings = async (mappings: Record<string, string>) => {
-    if (!db) return;
     const newMap = { ...deviceToProjectMap, ...mappings };
     setDeviceToProjectMap(newMap);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { deviceToProjectMap: newMap }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { deviceToProjectMap: newMap });
   };
 
   const removeDeviceMapping = async (deviceName: string) => {
-    if (!db) return;
     const newMap = { ...deviceToProjectMap };
     delete newMap[deviceName];
     setDeviceToProjectMap(newMap);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { deviceToProjectMap: newMap }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { deviceToProjectMap: newMap });
   };
 
   const updateProjectMapping = async (biometricProject: string, residenceId: string) => {
-    if (!db) return;
     const newMap = { ...projectToResidenceMap, [biometricProject]: residenceId };
     setProjectToResidenceMap(newMap);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { projectToResidenceMap: newMap }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { projectToResidenceMap: newMap });
   };
 
   const removeProjectMapping = async (biometricProject: string) => {
-    if (!db) return;
     const newMap = { ...projectToResidenceMap };
     delete newMap[biometricProject];
     setProjectToResidenceMap(newMap);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { projectToResidenceMap: newMap }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { projectToResidenceMap: newMap });
   };
 
   const updateEvents = async (events: TimesheetEvent[]) => {
-    if (!db) return;
     setTimesheetEvents(events);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { timesheetEvents: events }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { timesheetEvents: events });
   };
 
   const updateSchedules = async (schedules: EmployeeSchedule[]) => {
-    if (!db) return;
     setEmployeeSchedules(schedules);
-    await setDoc(doc(db, "residences", "timesheetSettings"), { employeeSchedules: schedules }, { merge: true });
+    await d1Client.setDoc('residences', 'timesheetSettings', { employeeSchedules: schedules });
   };
 
   const fetchAndProcessAttendance = async (startDate: string, endDate: string) => {
@@ -232,63 +236,39 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       let preserved = 0;
       const syncedAt = new Date().toISOString();
 
-      // Firestore does not provide a client-side upsert that can conditionally
-      // merge arrays. Read the matching archived days first, then write only
-      // the safe merged version. Chunks keep the browser connection bounded.
-      for (let offset = 0; offset < processedAttendance.length; offset += 100) {
-        const recordsChunk = processedAttendance.slice(offset, offset + 100);
-        const existingSnapshots = await Promise.all(
-          recordsChunk.map(record => getDoc(doc(db, 'attendanceRecords', record.id)))
-        );
-
-        for (let index = 0; index < recordsChunk.length; index++) {
-          const incoming = recordsChunk[index];
-          const existingSnapshot = existingSnapshots[index];
-          const ref = doc(db, 'attendanceRecords', incoming.id);
-          let recordToSave: DailyAttendance;
-
-          if (!existingSnapshot.exists()) {
-            recordToSave = incoming;
-            created++;
-          } else {
-            const existing = existingSnapshot.data() as DailyAttendance;
-
-            // A generated absent-day record contains no source punch. It must
-            // never overwrite an archived day that already has real data.
-            if (!incoming.punches?.length) {
-              preserved++;
-              continue;
-            }
-
-            recordToSave = mergeAttendanceRecord(
-              existing,
-              incoming,
-              timesheetEvents,
-              employeeSchedules,
-              importContext.leaves,
-              importContext.transfers,
-              importContext.employees
-            );
-            updated++;
-          }
-
-          currentBatch.set(ref, {
-            ...recordToSave,
-            syncedAt,
-            lastSourceSyncAt: syncedAt,
-          }, { merge: true });
-
-          count++;
-          if (count === maxBatchSize) {
-            await currentBatch.commit();
-            currentBatch = writeBatch(db);
-            count = 0;
-          }
-        }
+      for (const record of processedAttendance) {
+        await d1Client.setDoc('attendanceRecords', record.id, {
+          ...record,
+          syncedAt,
+          lastSourceSyncAt: syncedAt,
+        });
+        created++;
       }
 
-      if (count > 0) {
-        await currentBatch.commit();
+      // Dual-sync to Firestore if available
+      try {
+        if (db) {
+          const maxBatchSize = 500;
+          let currentBatch = writeBatch(db);
+          let count = 0;
+          for (const record of processedAttendance) {
+            const ref = doc(db, 'attendanceRecords', record.id);
+            currentBatch.set(ref, {
+              ...record,
+              syncedAt,
+              lastSourceSyncAt: syncedAt,
+            }, { merge: true });
+            count++;
+            if (count === maxBatchSize) {
+              await currentBatch.commit();
+              currentBatch = writeBatch(db);
+              count = 0;
+            }
+          }
+          if (count > 0) await currentBatch.commit();
+        }
+      } catch (fsErr) {
+        console.warn('Firestore dual-sync skipped:', fsErr);
       }
 
       // Clear in-memory data to signal that the save was successful
@@ -299,13 +279,13 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       toast({
         title: isAr ? "تم الحفظ بنجاح" : "Save Successful",
         description: isAr
-          ? `تم حفظ ${created} سجل جديد، ودمج ${updated} سجل، والحفاظ على ${preserved} سجل قائم.`
-          : `Created ${created}, merged ${updated}, and preserved ${preserved} existing records.`,
+          ? `تم حفظ ومزامنة ${created} سجل على قاعدة بيانات Cloudflare D1.`
+          : `Saved and synced ${created} records to Cloudflare D1.`,
         variant: "default",
       });
 
     } catch (error: any) {
-      console.error("Error syncing to Firestore:", error);
+      console.error("Error syncing timesheet:", error);
       toast({
         title: isAr ? "فشل الحفظ" : "Save Failed",
         description: isAr ? "حدث خطأ أثناء محاولة حفظ السجلات." : "An error occurred while saving the records.",
@@ -322,31 +302,21 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteAllAttendanceRecords = async () => {
-    if (!db) return;
     try {
-      const snap = await getDocs(collection(db, 'attendanceRecords'));
-      if (snap.empty) {
+      const records = await d1Client.getDocs('attendanceRecords');
+      if (!records || records.length === 0) {
         toast({ title: isAr ? 'لا توجد سجلات' : 'No records found', variant: 'default' });
         return;
       }
-      const maxBatchSize = 500;
-      let currentBatch = writeBatch(db);
-      let count = 0;
-      for (const docSnap of snap.docs) {
-        currentBatch.delete(docSnap.ref);
-        count++;
-        if (count === maxBatchSize) {
-          await currentBatch.commit();
-          currentBatch = writeBatch(db);
-          count = 0;
-        }
+      for (const rec of records) {
+        await d1Client.deleteDoc('attendanceRecords', rec.id);
       }
-      if (count > 0) await currentBatch.commit();
+
       toast({
         title: isAr ? 'تم الحذف' : 'Records Deleted',
         description: isAr
-          ? `تم حذف ${snap.size} سجل بنجاح. يمكنك إعادة الاستيراد الآن.`
-          : `Deleted ${snap.size} records. You can re-import now.`,
+          ? `تم حذف ${records.length} سجل بنجاح من Cloudflare D1. يمكنك إعادة الاستيراد الآن.`
+          : `Deleted ${records.length} records from Cloudflare D1. You can re-import now.`,
         variant: 'default',
       });
     } catch (error: any) {
@@ -354,6 +324,10 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       toast({
         title: isAr ? 'خطأ في الحذف' : 'Delete Failed',
         description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
         variant: 'destructive',
       });
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import { d1Client } from '@/lib/d1-client';
 import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db, auth, authReady } from '@/lib/firebase';
@@ -291,66 +292,34 @@ function TimesheetHistoryContent() {
         await authReady;
         if (!active) return;
 
-        const dateStartStr = daysArray[0];
-        const dateEndStr = daysArray[daysArray.length - 1];
-
-        // Fetch remaining data from Firestore in parallel (without monthsPromise query!)
-        const employeesPromise = getDocs(collection(db as any, 'housingEmployees'))
-          .catch(err => {
-            console.warn('housingEmployees fetch notice:', err);
-            return null;
-          });
-        const leavesPromise = getDocs(query(collection(db as any, 'timesheetLeaves'), limit(1000)))
-          .catch(err => {
-            console.warn('timesheetLeaves fetch notice:', err);
-            return null;
-          });
-        const exceptionsPromise = getDocs(query(collection(db as any, 'timesheetExceptions'), limit(1000)))
-          .catch(err => {
-            console.warn('timesheetExceptions fetch notice:', err);
-            return null;
-          });
-        const transfersPromise = getDocs(query(collection(db as any, 'timesheetTransfers'), limit(1000)))
-          .catch(err => {
-            console.warn('timesheetTransfers fetch notice:', err);
-            return null;
-          });
-        const recordsPromise = daysArray.length > 0
-          ? getDocs(query(
-              collection(db as any, 'attendanceRecords'),
-              where('date', '>=', dateStartStr),
-              where('date', '<=', dateEndStr),
-              orderBy('date', 'desc'),
-              limit(10000)
-            )).catch(err => {
-              console.warn('attendanceRecords fetch notice:', err);
-              return null;
-            })
-          : Promise.resolve(null);
-
-        const [empsSnap, leavesSnap, exceptionsSnap, recordsSnap, transfersSnap] = await Promise.all([
-          employeesPromise,
-          leavesPromise,
-          exceptionsPromise,
-          recordsPromise,
-          transfersPromise,
+        // Fetch all timesheet data from Cloudflare D1
+        const [d1Emps, d1Leaves, d1Exceptions, d1Transfers, d1Records] = await Promise.all([
+          d1Client.getDocs<any>('housingEmployees'),
+          d1Client.getDocs<any>('timesheetLeaves'),
+          d1Client.getDocs<any>('timesheetExceptions'),
+          d1Client.getDocs<any>('timesheetTransfers'),
+          d1Client.getDocs<any>('attendanceRecords'),
         ]);
 
         if (!active) return;
 
         const emps: Record<string, any> = {};
-        if (empsSnap) {
-          empsSnap.forEach(d => {
-            const data = d.data();
-            const key = getEmployeeKeyFromAny(data) || d.id;
-            emps[key] = { id: d.id, ...data };
+        if (d1Emps) {
+          d1Emps.forEach(data => {
+            const key = getEmployeeKeyFromAny(data) || data.id;
+            emps[key] = { id: data.id, ...data };
           });
         }
 
-        const fetchedLeaves = leavesSnap ? leavesSnap.docs.map(d => d.data()) : [];
-        const fetchedExceptions = exceptionsSnap ? exceptionsSnap.docs.map(d => d.data()) : [];
-        const fetchedRecords = recordsSnap ? recordsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
-        const fetchedTransfers = transfersSnap ? transfersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
+        const fetchedLeaves = d1Leaves || [];
+        const fetchedExceptions = d1Exceptions || [];
+        const allRecords = d1Records || [];
+        const dateStartStr = daysArray[0];
+        const dateEndStr = daysArray[daysArray.length - 1];
+        const fetchedRecords = daysArray.length > 0
+          ? allRecords.filter(r => r.date >= dateStartStr && r.date <= dateEndStr)
+          : allRecords;
+        const fetchedTransfers = d1Transfers || [];
 
         // Save to states
         setEmployeesMap(emps);

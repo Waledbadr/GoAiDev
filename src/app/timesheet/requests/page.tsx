@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -24,13 +23,12 @@ export default function TimesheetRequestsPage() {
 
     const fetchData = async () => {
       try {
-        const qL = query(collection(db as any, 'timesheetLeaves'), orderBy('createdAt', 'desc'), limit(1000));
-        const snapL = await getDocs(qL);
-        setLeaves(snapL.docs.map(d => ({ docId: d.id, ...d.data() })));
-
-        const qT = query(collection(db as any, 'timesheetTransfers'), orderBy('createdAt', 'desc'), limit(1000));
-        const snapT = await getDocs(qT);
-        setTransfers(snapT.docs.map(d => ({ docId: d.id, ...d.data() })));       
+        const [d1Leaves, d1Transfers] = await Promise.all([
+          d1Client.getDocs<any>('timesheetLeaves'),
+          d1Client.getDocs<any>('timesheetTransfers'),
+        ]);
+        setLeaves((d1Leaves || []).map(d => ({ docId: d.id, ...d })));
+        setTransfers((d1Transfers || []).map(d => ({ docId: d.id, ...d })));       
       } catch (e) {
         console.error(e);
       } finally {

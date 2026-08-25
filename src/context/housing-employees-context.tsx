@@ -12,12 +12,12 @@ import {
   addDoc,
   serverTimestamp 
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { useUsers } from '@/context/users-context';
 import { useToast } from '@/hooks/use-toast';
 
 export interface HousingEmployee {
-  id: string; // Firestore document ID
+  id: string; // Document ID
   employeeId: string; // Internal ID or Badge ID
   name: string;
   nameAr: string;
@@ -61,58 +61,49 @@ export function HousingEmployeesProvider({ children }: { children: ReactNode }) 
     }
 
     try {
-      const employeesRef = collection(db as any, 'housingEmployees');
-      const q = query(employeesRef, orderBy('createdAt', 'desc'));
-      
-      const snapshot = await getDocs(q);
-      const emps: HousingEmployee[] = [];
-      snapshot.forEach((doc) => {
-        emps.push({ id: doc.id, ...doc.data() } as HousingEmployee);
-      });
+      const d1Emps = await d1Client.getDocs<HousingEmployee>('housingEmployees');
+      const emps = d1Emps || [];
 
       cachedHousingEmployees = emps;
       lastEmployeesFetchTime = Date.now();
       setEmployees(emps);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching housing employees:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load employees data.',
-        variant: 'destructive',
-      });
+      console.error('Error fetching housing employees from D1:', error);
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!currentUser) return; // Wait for authentication
     fetchEmployees();
-  }, [currentUser]);
+  }, []);
 
   const addEmployee = async (data: Omit<HousingEmployee, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const employeesRef = collection(db, 'housingEmployees');
-      const docRef = await addDoc(employeesRef, {
+      const newId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const newEmp: HousingEmployee = {
         ...data,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      const newEmp = { id: docRef.id, ...data, createdAt: new Date(), updatedAt: new Date() } as HousingEmployee;
+        id: newId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await d1Client.setDoc('housingEmployees', newId, newEmp);
+
       setEmployees(prev => {
         const next = [newEmp, ...prev];
         cachedHousingEmployees = next;
         return next;
       });
       toast({
-        title: 'Success',
-        description: 'Employee added successfully.',
+        title: 'تم الحفظ',
+        description: 'تمت إضافة الموظف بنجاح في قاعدة بيانات Cloudflare D1.',
       });
     } catch (error) {
       console.error('Error adding employee:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to add employee.',
+        title: 'خطأ',
+        description: 'تعذر إضافة الموظف.',
         variant: 'destructive',
       });
       throw error;
@@ -121,25 +112,21 @@ export function HousingEmployeesProvider({ children }: { children: ReactNode }) 
 
   const updateEmployee = async (id: string, data: Partial<HousingEmployee>) => {
     try {
-      const empRef = doc(db, 'housingEmployees', id);
-      await updateDoc(empRef, {
-        ...data,
-        updatedAt: serverTimestamp(),
-      });
+      await d1Client.updateDoc('housingEmployees', id, data);
       setEmployees(prev => {
-        const next = prev.map(emp => emp.id === id ? { ...emp, ...data, updatedAt: new Date() } : emp);
+        const next = prev.map(emp => emp.id === id ? { ...emp, ...data, updatedAt: new Date().toISOString() } : emp);
         cachedHousingEmployees = next;
         return next;
       });
       toast({
-        title: 'Success',
-        description: 'Employee updated successfully.',
+        title: 'تم التحديث',
+        description: 'تم تحديث بيانات الموظف بنجاح.',
       });
     } catch (error) {
       console.error('Error updating employee:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to update employee.',
+        title: 'خطأ',
+        description: 'تعذر تحديث بيانات الموظف.',
         variant: 'destructive',
       });
       throw error;

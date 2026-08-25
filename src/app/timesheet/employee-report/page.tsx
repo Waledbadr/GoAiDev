@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
+import { d1Client } from '@/lib/d1-client';
 import { db } from '@/lib/firebase';
 import { HousingEmployeesProvider, useHousingEmployees, HousingEmployee } from '@/context/housing-employees-context';
 import { TimesheetProvider, useTimesheet } from '@/context/timesheet-context';
@@ -469,47 +469,20 @@ function EmployeeReportInner() {
       try {
         const empKey = String(selectedBadge).trim();
 
-        // 1. Fetch Attendance Records for this employee
-        const attendanceQuery = query(
-          collection(db as any, 'attendanceRecords'),
-          where('employeeId', '==', empKey)
-        );
-
-        // 2. Fetch Leaves
-        const leavesQ1 = query(collection(db as any, 'timesheetLeaves'), where('employeeId', '==', empKey));
-        const leavesQ2 = query(collection(db as any, 'timesheetLeaves'), where('badgeId', '==', empKey));
-
-        // 3. Fetch Transfers
-        const transfersQ1 = query(collection(db as any, 'timesheetTransfers'), where('employeeId', '==', empKey));
-        const transfersQ2 = query(collection(db as any, 'timesheetTransfers'), where('badgeId', '==', empKey));
-
-        // 4. Fetch Exceptions
-        const exceptionsQ1 = query(collection(db as any, 'timesheetExceptions'), where('employeeId', '==', empKey));
-        const exceptionsQ2 = query(collection(db as any, 'timesheetExceptions'), where('badgeId', '==', empKey));
-
-        const [attSnap, l1, l2, t1, t2, e1, e2] = await Promise.all([
-          getDocs(attendanceQuery).catch(() => ({ docs: [] })),
-          getDocs(leavesQ1).catch(() => ({ docs: [] })),
-          getDocs(leavesQ2).catch(() => ({ docs: [] })),
-          getDocs(transfersQ1).catch(() => ({ docs: [] })),
-          getDocs(transfersQ2).catch(() => ({ docs: [] })),
-          getDocs(exceptionsQ1).catch(() => ({ docs: [] })),
-          getDocs(exceptionsQ2).catch(() => ({ docs: [] }))
+        // Fetch all relevant collections from Cloudflare D1
+        const [allAttendance, allLeaves, allTransfers, allExceptions] = await Promise.all([
+          d1Client.getDocs<any>('attendanceRecords'),
+          d1Client.getDocs<any>('timesheetLeaves'),
+          d1Client.getDocs<any>('timesheetTransfers'),
+          d1Client.getDocs<any>('timesheetExceptions'),
         ]);
 
         if (!isSubscribed) return;
 
-        const attList = attSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-
-        const mergeDocs = (d1: any[], d2: any[]) => {
-          const map = new Map();
-          [...d1, ...d2].forEach((d) => map.set(d.id, { id: d.id, ...d.data() }));
-          return Array.from(map.values());
-        };
-
-        const lList = mergeDocs(l1.docs, l2.docs);
-        const tList = mergeDocs(t1.docs, t2.docs);
-        const eList = mergeDocs(e1.docs, e2.docs);
+        const attList = (allAttendance || []).filter((r: any) => String(r.employeeId).trim() === empKey);
+        const lList = (allLeaves || []).filter((l: any) => String(l.employeeId).trim() === empKey || String(l.badgeId).trim() === empKey || l.employeeDocId === empKey);
+        const tList = (allTransfers || []).filter((t: any) => String(t.employeeId).trim() === empKey || String(t.badgeId).trim() === empKey);
+        const eList = (allExceptions || []).filter((e: any) => String(e.employeeId).trim() === empKey || String(e.badgeId).trim() === empKey);
 
         setAttendanceRecords(attList);
         setLeaves(lList);

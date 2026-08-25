@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, doc, setDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -82,11 +81,9 @@ export function AddLeaveDialog({ open, onOpenChange, defaultType = 'Annual', ini
     setSubmitting(true);
     try {
       // --- Overlap Validation ---
-      const q = query(collection(db as any, 'timesheetLeaves'), where('employeeDocId', '==', formData.employeeId));
-      const snap = await getDocs(q);
-      const existingRecords = snap.docs
-        .map(d => ({ docId: d.id, ...d.data() as any }))
-        .filter(item => item.docId !== initialData?.docId); 
+      const allLeaves = await d1Client.getDocs<any>('timesheetLeaves');
+      const existingRecords = (allLeaves || [])
+        .filter(item => item.employeeDocId === formData.employeeId && item.id !== initialData?.docId && item.docId !== initialData?.docId);
 
       // Ranges A=[s1, e1], B=[s2, e2] overlap if: s1 <= e2 AND s2 <= e1
       const targetS = new Date(formData.startDate).getTime();
@@ -95,9 +92,6 @@ export function AddLeaveDialog({ open, onOpenChange, defaultType = 'Annual', ini
       const conflict = existingRecords.find(item => {
         const exS = new Date(item.startDate).getTime();
         const exE = item.endDate ? new Date(item.endDate).getTime() : exS;
-        
-        // Skip some overlap checks if it's just a resumption note? 
-        // Actually, user wants "no overlaps" generally.
         return (targetS <= exE && exS <= targetE);
       });
 
@@ -113,11 +107,11 @@ export function AddLeaveDialog({ open, onOpenChange, defaultType = 'Annual', ini
         return;
       }
       // --- End Validation ---
-      if (mode === 'edit' && initialData?.docId) {
-        const docRef = doc(db as any, 'timesheetLeaves', initialData.docId);
-        await updateDoc(docRef, {
-          employeeDocId: employee.id, // reference to housingEmployee doc
-          employeeId: employee.employeeId || '', // badge/emp ID
+      if (mode === 'edit' && (initialData?.docId || initialData?.id)) {
+        const targetId = initialData.docId || initialData.id;
+        await d1Client.updateDoc('timesheetLeaves', targetId, {
+          employeeDocId: employee.id,
+          employeeId: employee.employeeId || '',
           badgeId: employee.employeeId || '',
           name: employee.name || '',
           nameAr: employee.nameAr || employee.name || '',
@@ -133,13 +127,11 @@ export function AddLeaveDialog({ open, onOpenChange, defaultType = 'Annual', ini
           description: isAr ? 'تم تحديث الطلب بنجاح' : 'Request updated successfully',
         });
       } else {
-        const colRef = collection(db as any, 'timesheetLeaves');
-        const docRef = doc(colRef);
-        
+        const newId = `leave_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const payload = {
-          id: docRef.id,
-          employeeDocId: employee.id, // reference to housingEmployee doc
-          employeeId: employee.employeeId || '', // badge/emp ID
+          id: newId,
+          employeeDocId: employee.id,
+          employeeId: employee.employeeId || '',
           badgeId: employee.employeeId || '',
           name: employee.name || '',
           nameAr: employee.nameAr || employee.name || '',
@@ -151,7 +143,7 @@ export function AddLeaveDialog({ open, onOpenChange, defaultType = 'Annual', ini
           createdAt: new Date().toISOString(),
         };
 
-        await setDoc(docRef, payload);
+        await d1Client.setDoc('timesheetLeaves', newId, payload);
 
         toast({
           title: isAr ? 'نجاح' : 'Success',

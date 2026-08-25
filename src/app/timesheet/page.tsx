@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { TimesheetProvider } from '@/context/timesheet-context';
 import { TimesheetView } from '@/components/timesheet/timesheet-view';

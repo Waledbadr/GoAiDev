@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs, deleteDoc, doc, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -29,10 +28,8 @@ function LeavesManagementContent() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // By using getDocs with a limit, we save significantly on Database reads
-      const qL = query(collection(db as any, 'timesheetLeaves'), orderBy('createdAt', 'desc'), limit(1000));
-      const snap = await getDocs(qL);
-      setAllData(snap.docs.map(d => ({ docId: d.id, ...d.data() })));
+      const d1Leaves = await d1Client.getDocs<any>('timesheetLeaves');
+      setAllData((d1Leaves || []).map(d => ({ docId: d.id, ...d })));
     } catch (e) {
       console.error(e);
     } finally {
@@ -53,7 +50,7 @@ function LeavesManagementContent() {
   const handleDelete = async (id: string) => {
     if (!confirm(isAr ? 'هل أنت متأكد من حذف هذا السجل؟' : 'Are you sure you want to delete this record?')) return;
     try {
-      await deleteDoc(doc(db as any, 'timesheetLeaves', id));
+      await d1Client.deleteDoc('timesheetLeaves', id);
       setAllData(prev => prev.filter(item => item.docId !== id));
       toast({
         title: isAr ? 'تم الحذف' : 'Deleted',
