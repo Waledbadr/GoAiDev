@@ -78,13 +78,13 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
         setUsers([]);
         setCurrentUser(null);
         try { localStorage.removeItem('currentUser'); } catch {}
-      } else if (!isLoaded.current) {
-        // First time we see a signed-in user, load users
+      } else {
+        isLoaded.current = false;
         loadUsers();
       }
     });
     return () => unsub();
-  }, []);
+  }, [loadUsers]);
 
   const loadUsers = useCallback(() => {
     if (isLoaded.current) return;
@@ -126,9 +126,26 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
         const d1Users = await d1Client.getDocs<User>('users');
         if (d1Users && d1Users.length > 0) {
           setUsers(d1Users);
-          const activeUser = d1Users[0];
-          if (!currentUser && activeUser) {
+
+          const authEmail = auth?.currentUser?.email?.toLowerCase();
+          const authUid = auth?.currentUser?.uid;
+          const storedUserId = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null;
+
+          // 1. Find user matching signed-in email
+          // 2. Find user matching signed-in uid
+          // 3. Find user matching stored user ID
+          // 4. Match Admin user
+          // 5. Fallback to first user
+          const activeUser =
+            (authEmail ? d1Users.find(u => u.email?.toLowerCase() === authEmail) : null) ||
+            (authUid ? d1Users.find(u => u.id === authUid) : null) ||
+            (storedUserId ? d1Users.find(u => u.id === storedUserId) : null) ||
+            d1Users.find(u => u.role === 'Admin') ||
+            d1Users[0];
+
+          if (activeUser) {
             setCurrentUser(activeUser);
+            if (activeUser.themeSettings) applyTheme(activeUser.themeSettings);
             try { localStorage.setItem('currentUser', activeUser.id); } catch {}
           }
         }
@@ -139,7 +156,7 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     loadUsersFromD1();
-  }, [currentUser]);
+  }, []);
 
   // Initialize users list depending on environment/auth
   useEffect(() => {
