@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { d1RemoteSync } from './d1-remote-sync';
 
 // Path to the primary D1 database store
 const DB_DIR = path.resolve('data');
@@ -101,6 +102,7 @@ class D1DatabaseEngine {
 
     colMap.set(String(docId), doc);
     this.persist();
+    d1RemoteSync.enqueueSet(collectionName, String(docId), doc);
     return doc as T;
   }
 
@@ -119,6 +121,7 @@ class D1DatabaseEngine {
 
     colMap.set(String(docId), updated);
     this.persist();
+    d1RemoteSync.enqueueSet(collectionName, String(docId), updated);
     return updated as T;
   }
 
@@ -127,7 +130,10 @@ class D1DatabaseEngine {
     const colMap = this.cache.get(collectionName);
     if (!colMap) return false;
     const deleted = colMap.delete(String(docId));
-    if (deleted) this.persist();
+    if (deleted) {
+      this.persist();
+      d1RemoteSync.enqueueDelete(collectionName, String(docId));
+    }
     return deleted;
   }
 
