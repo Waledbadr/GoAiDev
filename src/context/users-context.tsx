@@ -62,30 +62,6 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
     } catch {}
   };
 
-  // Track Firebase Auth state to prefer the signed-in UID and trigger loading
-  useEffect(() => {
-    if (!auth) return; // local mode
-    const unsub = onAuthStateChanged(auth, (u) => {
-      lastAuthUidRef.current = u?.uid || null;
-      if (!u) {
-        // Signed out
-        // Unsubscribe any active listeners and reset state to avoid permission errors
-        if (unsubscribeRef.current) {
-          try { unsubscribeRef.current(); } catch {}
-          unsubscribeRef.current = null;
-        }
-        isLoaded.current = false;
-        setUsers([]);
-        setCurrentUser(null);
-        try { localStorage.removeItem('currentUser'); } catch {}
-      } else {
-        isLoaded.current = false;
-        loadUsers();
-      }
-    });
-    return () => unsub();
-  }, [loadUsers]);
-
   const loadUsers = useCallback(() => {
     if (isLoaded.current) return;
     
@@ -157,6 +133,29 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
     }
     loadUsersFromD1();
   }, []);
+
+  // Track Firebase Auth state to prefer the signed-in UID and trigger loading
+  useEffect(() => {
+    if (!auth) return; // local mode
+    const unsub = onAuthStateChanged(auth, (u) => {
+      lastAuthUidRef.current = u?.uid || null;
+      if (!u) {
+        // Signed out
+        if (unsubscribeRef.current) {
+          try { unsubscribeRef.current(); } catch {}
+          unsubscribeRef.current = null;
+        }
+        isLoaded.current = false;
+        setUsers([]);
+        setCurrentUser(null);
+        try { localStorage.removeItem('currentUser'); } catch {}
+      } else {
+        isLoaded.current = false;
+        loadUsers();
+      }
+    });
+    return () => unsub();
+  }, [loadUsers]);
 
   // Initialize users list depending on environment/auth
   useEffect(() => {
