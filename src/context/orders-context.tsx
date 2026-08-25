@@ -118,7 +118,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
   const { users, currentUser } = useUsers();
 
 
-  const loadOrders = useCallback(() => {
+  const loadOrders = useCallback(async () => {
     if (unsubscribeRef.current) {
         unsubscribeRef.current(); // Unsubscribe from previous listener
     }
