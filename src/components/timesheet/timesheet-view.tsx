@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Download, RefreshCw, Save, Database, Clock, Users, Loader2, Trash2 } from "lucide-react";
+import { Download, RefreshCw, Save, Database, Clock, Users, Loader2, Trash2, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -33,6 +33,21 @@ import { useUsers } from "@/context/users-context";
 import { useResidences } from "@/context/residences-context";
 import { getFiscalMonthForDate, getFiscalMonthPeriod, getPreviousFiscalMonth } from "@/lib/fiscal-month-utils";
 
+const ALL_FISCAL_MONTHS = [
+  { num: "01", nameAr: "يناير", nameEn: "Jan" },
+  { num: "02", nameAr: "فبراير", nameEn: "Feb" },
+  { num: "03", nameAr: "مارس", nameEn: "Mar" },
+  { num: "04", nameAr: "أبريل", nameEn: "Apr" },
+  { num: "05", nameAr: "مايو", nameEn: "May" },
+  { num: "06", nameAr: "يونيو", nameEn: "Jun" },
+  { num: "07", nameAr: "يوليو", nameEn: "Jul" },
+  { num: "08", nameAr: "أغسطس", nameEn: "Aug" },
+  { num: "09", nameAr: "سبتمبر", nameEn: "Sep" },
+  { num: "10", nameAr: "أكتوبر", nameEn: "Oct" },
+  { num: "11", nameAr: "نوفمبر", nameEn: "Nov" },
+  { num: "12", nameAr: "ديسمبر", nameEn: "Dec" },
+];
+
 export function TimesheetView() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -42,10 +57,27 @@ export function TimesheetView() {
   const [endDate, setEndDate] = useState(currentDay);
   const [editingRecord, setEditingRecord] = useState<DailyAttendance | null>(null);
 
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<number>(() => {
+    const currentFiscalMonth = getFiscalMonthForDate(new Date());
+    const y = parseInt(currentFiscalMonth.split('-')[0], 10);
+    return isNaN(y) ? new Date().getFullYear() : y;
+  });
+
   const { locale } = useLanguage();
   const { currentUser } = useUsers();
   
   const isAr = locale === "ar";
+
+  const isFiscalMonthActive = (monthValue: string) => {
+    const period = getFiscalMonthPeriod(monthValue);
+    const formatDate = (date: Date) => {
+      const y = date.getUTCFullYear();
+      const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(date.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+    return startDate === formatDate(period.startDate) && endDate === formatDate(period.endDate);
+  };
   
   const {
     rawPunches,
@@ -261,10 +293,10 @@ export function TimesheetView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6 space-y-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Quick Filters */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-foreground">{isAr ? "نطاقات زمنية سريعة" : "Quick Ranges"}</h3>
+          <div className="space-y-4">
+            {/* Quick Ranges */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">{isAr ? "نطاقات زمنية سريعة" : "Quick Ranges"}</h3>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeToday}>{isAr ? "اليوم" : "Today"}</Button>
                 <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeYesterday}>{isAr ? "أمس" : "Yesterday"}</Button>
@@ -273,27 +305,58 @@ export function TimesheetView() {
               </div>
             </div>
             
-            {/* Fiscal Months */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-foreground">{isAr ? "الشهور المالية" : "Fiscal Months"}</h3>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { name: isAr ? "يناير" : "Jan", value: "2026-01" },
-                  { name: isAr ? "فبراير" : "Feb", value: "2026-02" },
-                  { name: isAr ? "مارس" : "Mar", value: "2026-03" },
-                  { name: isAr ? "أبريل" : "Apr", value: "2026-04" },
-                  { name: isAr ? "مايو" : "May", value: "2026-05" },
-                ].map(m => (
-                  <Button 
-                    key={m.value}
-                    variant="outline" 
-                    size="sm" 
-                    className="h-8 text-xs rounded-md border-dashed border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
-                    onClick={() => setRangeByMonth(m.value)}
+            {/* Fiscal Months (Full 12 Months with Year Switcher) */}
+            <div className="space-y-2.5 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-foreground">{isAr ? "الشهور المالية" : "Fiscal Months"}</h3>
+                </div>
+                <div className="flex items-center gap-1 bg-muted/60 px-2 py-0.5 rounded-lg border border-border/50 shadow-sm">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 rounded-md hover:bg-background"
+                    onClick={() => setSelectedFiscalYear(y => y - 1)}
+                    title={isAr ? "السنة السابقة" : "Previous Year"}
                   >
-                    {m.name}
+                    <ChevronRight className={`w-3.5 h-3.5 ${isAr ? "" : "rotate-180"}`} />
                   </Button>
-                ))}
+                  <span className="text-xs font-bold px-1.5 min-w-[3.2rem] text-center font-mono">
+                    {selectedFiscalYear}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 rounded-md hover:bg-background"
+                    onClick={() => setSelectedFiscalYear(y => y + 1)}
+                    title={isAr ? "السنة التالية" : "Next Year"}
+                  >
+                    <ChevronLeft className={`w-3.5 h-3.5 ${isAr ? "" : "rotate-180"}`} />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-1.5">
+                {ALL_FISCAL_MONTHS.map(m => {
+                  const monthValue = `${selectedFiscalYear}-${m.num}`;
+                  const active = isFiscalMonthActive(monthValue);
+                  return (
+                    <Button 
+                      key={monthValue}
+                      variant={active ? "default" : "outline"} 
+                      size="sm" 
+                      className={`h-8 text-xs font-medium transition-all ${
+                        active
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold border-emerald-600"
+                          : "border-dashed border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
+                      }`}
+                      onClick={() => setRangeByMonth(monthValue)}
+                    >
+                      {isAr ? m.nameAr : m.nameEn}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           </div>
