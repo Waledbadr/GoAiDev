@@ -82,12 +82,15 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
   // Reset local state when employee or defaultDate changes
   useEffect(() => {
     if (employee) {
+      const initialProject = employee.projectName || (employee as any).project || '';
       setGeneralData({
         name: employee.name || '',
         nameAr: employee.nameAr || '',
         employeeId: employee.employeeId || '',
         profession: employee.profession || '',
         professionAr: employee.professionAr || '',
+        department: employee.department || '',
+        projectName: initialProject,
         dailyHours: employee.dailyHours || 8,
         monthlySalary: employee.monthlySalary || 0,
         status: employee.status || 'Active',
@@ -97,6 +100,22 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
       setShowLeaveForm(false);
       setShowTransferForm(false);
       setShowExceptionForm(false);
+
+      // If projectName is empty, attempt to infer from latest attendance punch
+      if (!initialProject) {
+        d1Client.getDocs<any>('attendanceRecords').then((records) => {
+          const empKey = String(employee.employeeId || employee.id).trim();
+          const empRecs = (records || [])
+            .filter((r) => String(r.employeeId).trim() === empKey && r.projectName && r.projectName !== 'Unassigned / Outside')
+            .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+          if (empRecs.length > 0 && empRecs[0].projectName) {
+            setGeneralData((prev) => ({
+              ...prev,
+              projectName: prev.projectName || empRecs[0].projectName,
+            }));
+          }
+        }).catch(console.error);
+      }
 
       // If opened from Monthly Archive with a specific date, pre-fill leave/exception forms for that day
       if (defaultDate) {

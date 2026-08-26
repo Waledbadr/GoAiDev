@@ -121,7 +121,16 @@ export default function TransferHistoryPage() {
                         <TableBody>
                             {loading ? renderSkeleton() : userTransfers.length > 0 ? userTransfers.map((transfer) => (
                                 <TableRow key={transfer.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetails(transfer)}>
-                                    <TableCell>{format(transfer.date.toDate(), 'PPP')}</TableCell>
+                                    <TableCell>
+                                        {transfer.date
+                                            ? format(
+                                                typeof (transfer.date as any).toDate === 'function'
+                                                    ? (transfer.date as any).toDate()
+                                                    : new Date(transfer.date),
+                                                'PPP'
+                                              )
+                                            : '-'}
+                                    </TableCell>
                                     <TableCell>{getResidenceName(transfer.fromResidenceId)}</TableCell>
                                     <TableCell>{getResidenceName(transfer.toResidenceId)}</TableCell>
                                     <TableCell>{(Array.isArray(transfer.items) ? transfer.items : (transfer.items && typeof transfer.items === 'object' ? Object.values(transfer.items as any) : [])).reduce((acc: number, item: any) => acc + (Number(item?.quantity) || 0), 0)}</TableCell>
@@ -176,7 +185,7 @@ export default function TransferHistoryPage() {
                                 {dict.typeLabel}: <span className="font-medium text-foreground">TRANSFER</span>
                             </div>
                             <div>
-                                {dict.date}: {format(selected.date.toDate(), 'PPP p')}
+                                {dict.date}: {selected.date ? format(typeof (selected.date as any).toDate === 'function' ? (selected.date as any).toDate() : new Date(selected.date), 'PPP p') : '-'}
                             </div>
                             <div>
                                 {dict.referenceLabel}: <span className="font-mono">{formatTrsId(selected.codeShort)}</span>

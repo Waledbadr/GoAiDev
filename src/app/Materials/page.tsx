@@ -308,7 +308,16 @@ export default function DashboardPage() {
                                                 <div className="font-medium text-primary underline-offset-2 hover:underline">{formatMivId(miv.id)}</div>
                                                 <div className="text-sm text-muted-foreground">{residences.find(r => String(r.id) === String(miv.residenceId))?.name || miv.residenceId}</div>
                                                 </TableCell>
-                                                <TableCell>{format(miv.date.toDate(), 'PPP')}</TableCell>
+                                                <TableCell>
+                                                    {miv.date
+                                                        ? format(
+                                                            typeof (miv.date as any).toDate === 'function'
+                                                                ? (miv.date as any).toDate()
+                                                                : new Date(miv.date),
+                                                            'PPP'
+                                                          )
+                                                        : '-'}
+                                                </TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>

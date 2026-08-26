@@ -52,7 +52,8 @@ import {
   UserCheck,
   Lock,
   Filter,
-  Users
+  Users,
+  ArrowUpDown
 } from 'lucide-react';
 
 import * as XLSX from 'xlsx';
@@ -268,6 +269,28 @@ function EmployeeReportInner() {
   const [leaves, setLeaves] = useState<any[]>([]);
   const [transfers, setTransfers] = useState<any[]>([]);
   const [exceptions, setExceptions] = useState<any[]>([]);
+  const [punchesSortOrder, setPunchesSortOrder] = useState<'desc' | 'asc'>('desc');
+
+  // Sorted attendance records (default: newest date on top, excluding future dates)
+  const sortedAttendanceRecords = useMemo(() => {
+    const todayStr = new Date().toISOString().substring(0, 10);
+    return [...attendanceRecords]
+      .filter((r) => !r.date || r.date <= todayStr)
+      .sort((a, b) => {
+        const dateA = String(a.date || '');
+        const dateB = String(b.date || '');
+        if (dateA !== dateB) {
+          return punchesSortOrder === 'desc'
+            ? dateB.localeCompare(dateA)
+            : dateA.localeCompare(dateB);
+        }
+        const timeA = String(a.checkIn || a.time || '');
+        const timeB = String(b.checkIn || b.time || '');
+        return punchesSortOrder === 'desc'
+          ? timeB.localeCompare(timeA)
+          : timeA.localeCompare(timeB);
+      });
+  }, [attendanceRecords, punchesSortOrder]);
 
   // Generate Months List (Current fiscal month and 18 previous fiscal months)
   const availableMonths = useMemo(() => {
@@ -453,10 +476,37 @@ function EmployeeReportInner() {
     }
   }, [userAllowedEmployees, selectedBadge]);
 
+  // Find latest known project from attendance records (based on employee's last biometric check-in)
+  const latestProjectFromPunches = useMemo(() => {
+    if (!attendanceRecords || attendanceRecords.length === 0) return null;
+    const sorted = [...attendanceRecords].sort((a, b) => {
+      const dateA = String(a.date || '');
+      const dateB = String(b.date || '');
+      return dateB.localeCompare(dateA); // Newest first
+    });
+
+    for (const rec of sorted) {
+      if (
+        rec.projectName &&
+        rec.projectName !== 'Unassigned / Outside' &&
+        rec.projectName !== '-' &&
+        rec.checkInDevice !== 'System Generated'
+      ) {
+        return rec.projectName;
+      }
+    }
+    return null;
+  }, [attendanceRecords]);
+
   // Current selected employee details
   const currentEmp = useMemo(() => {
-    return combinedEmployeesMap[selectedBadge] || null;
-  }, [combinedEmployeesMap, selectedBadge]);
+    const base = combinedEmployeesMap[selectedBadge] || null;
+    if (!base) return null;
+    return {
+      ...base,
+      projectName: latestProjectFromPunches || base.projectName || 'الموقع العام'
+    };
+  }, [combinedEmployeesMap, selectedBadge, latestProjectFromPunches]);
 
   // Fetch Attendance, Leaves, Transfers & Exceptions whenever employee or month changes
   useEffect(() => {
@@ -533,11 +583,39 @@ function EmployeeReportInner() {
     const matrix: Record<string, any> = {};
     const daysSet = new Set(daysInMonth);
 
-    // Indexed attendance records by date
+    // Indexed attendance records by date (merging multiple records and preserving real biometric punches)
     const attByDate: Record<string, any> = {};
     attendanceRecords.forEach((r) => {
-      if (r.date && daysSet.has(r.date)) {
+      if (!r.date || !daysSet.has(r.date)) return;
+      const existing = attByDate[r.date];
+      if (!existing) {
         attByDate[r.date] = r;
+      } else {
+        const existingHasPunches = (existing.punches && existing.punches.length > 0) || existing.checkIn || (existing.totalHours || 0) > 0;
+        const newHasPunches = (r.punches && r.punches.length > 0) || r.checkIn || (r.totalHours || 0) > 0;
+
+        if (!existingHasPunches && newHasPunches) {
+          attByDate[r.date] = r;
+        } else if (existingHasPunches && newHasPunches) {
+          const allPunches = Array.from(new Set([...(existing.punches || []), ...(r.punches || [])])).sort();
+          const checkIn = existing.checkIn && r.checkIn ? (existing.checkIn < r.checkIn ? existing.checkIn : r.checkIn) : (existing.checkIn || r.checkIn);
+          const checkOut = existing.checkOut && r.checkOut ? (existing.checkOut > r.checkOut ? existing.checkOut : r.checkOut) : (existing.checkOut || r.checkOut);
+          const totalHours = Math.max(existing.totalHours || 0, r.totalHours || 0);
+          const regularHours = Math.max(existing.regularHours || 0, r.regularHours || 0);
+          const overtimeHours = Math.max(existing.overtimeHours || 0, r.overtimeHours || 0);
+          attByDate[r.date] = {
+            ...existing,
+            ...r,
+            checkIn,
+            checkOut,
+            totalHours,
+            regularHours,
+            overtimeHours,
+            punches: allPunches,
+            projectName: r.projectName && r.projectName !== 'Unassigned / Outside' ? r.projectName : existing.projectName,
+            checkInDevice: r.checkInDevice && r.checkInDevice !== 'System Generated' ? r.checkInDevice : existing.checkInDevice,
+          };
+        }
       }
     });
 
@@ -564,6 +642,9 @@ function EmployeeReportInner() {
       const isFriday = dayOfWeek === 5; // Friday
       const todayStr = new Date().toISOString().substring(0, 10);
       const isFuture = dateStr > todayStr;
+
+      // Do not include future dates in the report
+      if (isFuture) return;
 
       const attRecord = attByDate[dateStr];
 
@@ -592,9 +673,7 @@ function EmployeeReportInner() {
       let deviceName = attRecord?.checkInDevice || attRecord?.deviceName || '-';
       let projectName = attRecord?.projectName || currentEmp?.projectName || '-';
 
-      if (isFuture) {
-        status = 'Future';
-      } else if (attRecord && attRecord.status && attRecord.status !== 'Incomplete') {
+      if (attRecord && attRecord.status && attRecord.status !== 'Incomplete') {
         status = attRecord.status;
       } else if (attRecord && (totalHours > 0 || regularHours > 0 || (punches && punches.length > 0))) {
         status = 'Present';
@@ -1285,42 +1364,73 @@ function EmployeeReportInner() {
         {/* TAB 2: Raw Biometric Logs */}
         <TabsContent value="punches" className="mt-4">
           <Card className="border shadow-sm">
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-base font-semibold">
-                {isAr ? 'سجل البصمات التفصيلي المسجل من أجهزة البصمة' : 'Raw Biometric Terminal Punches'}
-              </CardTitle>
-              <CardDescription>
-                {isAr
-                  ? 'عرض جميع حركات البصمات المسجلة لهذا الموظف بالتاريخ والوقت والجهاز'
-                  : 'All raw timestamped biometric logs for this employee'}
-              </CardDescription>
+            <CardHeader className="p-4 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b">
+              <div>
+                <CardTitle className="text-base font-semibold">
+                  {isAr ? 'سجل البصمات التفصيلي المسجل من أجهزة البصمة' : 'Raw Biometric Terminal Punches'}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {isAr
+                    ? 'عرض جميع حركات البصمات المسجلة لهذا الموظف مرتبة حسب التاريخ (الأحدث في الأعلى)'
+                    : 'All raw timestamped biometric logs for this employee sorted by date (newest first)'}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 font-medium border-border/80"
+                  onClick={() => setPunchesSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))}
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  {isAr
+                    ? punchesSortOrder === 'desc'
+                      ? 'الأحدث في الأعلى ↓'
+                      : 'الأقدم في الأعلى ↑'
+                    : punchesSortOrder === 'desc'
+                    ? 'Newest First ↓'
+                    : 'Oldest First ↑'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-4">
-              {attendanceRecords.length === 0 ? (
+              {sortedAttendanceRecords.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   {isAr ? 'لا توجد بصمات مسجلة في النظام لهذا الموظف' : 'No biometric records found for this employee.'}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {attendanceRecords.map((rec) => (
+                  {sortedAttendanceRecords.map((rec) => (
                     <div
                       key={rec.id}
-                      className="p-3 rounded-lg border bg-slate-50/50 dark:bg-gray-900 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                      className="p-3 rounded-lg border bg-slate-50/50 dark:bg-gray-900 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 dark:bg-blue-950 text-blue-600 rounded-md font-bold font-mono">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-300 rounded-md font-bold font-mono">
                           {rec.date}
                         </div>
                         <div>
                           <div className="font-semibold text-gray-900 dark:text-gray-100">
-                            {isAr ? 'الدخول:' : 'In:'} <span className="font-mono text-emerald-600">{rec.checkIn || '-'}</span> |{' '}
-                            {isAr ? 'الخروج:' : 'Out:'} <span className="font-mono text-blue-600">{rec.checkOut || '-'}</span>
+                            {isAr ? 'الدخول:' : 'In:'} <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{rec.checkIn || '-'}</span> |{' '}
+                            {isAr ? 'الخروج:' : 'Out:'} <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{rec.checkOut || '-'}</span>
                           </div>
                           <div className="text-muted-foreground mt-0.5">
                             {rec.checkInDevice || rec.deviceName || 'جهاز البصمة'} - {rec.projectName || 'الموقع'}
                           </div>
                         </div>
                       </div>
+
+                      {/* Punches sequence preview */}
+                      {rec.punches && rec.punches.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] text-muted-foreground mr-1">{isAr ? 'البصمات:' : 'Punches:'}</span>
+                          {rec.punches.map((p: string, idx: number) => (
+                            <span key={idx} className="text-[10px] font-mono bg-background px-1.5 py-0.5 rounded border">
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="font-mono">

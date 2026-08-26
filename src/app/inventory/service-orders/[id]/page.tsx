@@ -172,7 +172,14 @@ export default function ServiceOrderDetailsPage() {
                 <div className="text-right">
                     <p className="font-semibold print-residence-title" style={{ fontWeight: 700 }}>{order.residenceName}</p>
                     <p className="text-sm text-muted-foreground print-date">
-                        {order.dateCreated ? format(order.dateCreated.toDate(), "PPP") : "—"}
+                        {order.dateCreated
+                            ? format(
+                                typeof (order.dateCreated as any).toDate === 'function'
+                                    ? (order.dateCreated as any).toDate()
+                                    : new Date(order.dateCreated),
+                                "PPP"
+                              )
+                            : "—"}
                     </p>
                     <p className="text-sm text-muted-foreground print-date">
                         To: {order.destination?.name}

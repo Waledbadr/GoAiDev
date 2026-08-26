@@ -462,7 +462,14 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-medium leading-snug truncate">{notification.title}</p>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">{formatDistanceToNow(notification.createdAt.toDate(), { addSuffix: true })}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {formatDistanceToNow(
+                            notification.createdAt && typeof (notification.createdAt as any).toDate === 'function'
+                              ? (notification.createdAt as any).toDate()
+                              : new Date(notification.createdAt || Date.now()),
+                            { addSuffix: true }
+                          )}
+                        </span>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
                     </div>

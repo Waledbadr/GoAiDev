@@ -10,14 +10,17 @@ class D1RemoteSyncQueue {
 
   public enqueueSet(collectionName: string, docId: string, data: any) {
     const jsonStr = JSON.stringify(data).replace(/'/g, "''");
-    const now = new Date().toISOString();
-    const sql = `INSERT INTO firestore_documents (id, collection_name, data, created_at, updated_at) VALUES ('${docId}', '${collectionName}', '${jsonStr}', '${now}', '${now}') ON CONFLICT(id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at;\n`;
+    const escapedDocId = String(docId).replace(/'/g, "''");
+    const escapedColl = String(collectionName).replace(/'/g, "''");
+    const sql = `INSERT OR REPLACE INTO firestore_documents (collection_name, document_id, data) VALUES ('${escapedColl}', '${escapedDocId}', '${jsonStr}');\n`;
     this.queue.push(sql);
     this.scheduleFlush();
   }
 
   public enqueueDelete(collectionName: string, docId: string) {
-    const sql = `DELETE FROM firestore_documents WHERE id = '${docId}';\n`;
+    const escapedDocId = String(docId).replace(/'/g, "''");
+    const escapedColl = String(collectionName).replace(/'/g, "''");
+    const sql = `DELETE FROM firestore_documents WHERE collection_name = '${escapedColl}' AND document_id = '${escapedDocId}';\n`;
     this.queue.push(sql);
     this.scheduleFlush();
   }
@@ -39,6 +42,8 @@ class D1RemoteSyncQueue {
 
     try {
       const sqlContent = statements.join('\n');
+      const dir = path.dirname(tmpSqlFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(tmpSqlFile, sqlContent, 'utf8');
 
       // Run wrangler non-blocking in child process

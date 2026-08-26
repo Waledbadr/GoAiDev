@@ -1,7 +1,24 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Download, RefreshCw, Save, Database, Clock, Users, Loader2, Trash2, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { 
+  Download, 
+  RefreshCw, 
+  Save, 
+  Database, 
+  Clock, 
+  Users, 
+  Loader2, 
+  Trash2, 
+  Calendar, 
+  ChevronLeft, 
+  ChevronRight,
+  CheckCircle2,
+  Sparkles,
+  CalendarRange,
+  CalendarDays,
+  ArrowRight
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,18 +51,18 @@ import { useResidences } from "@/context/residences-context";
 import { getFiscalMonthForDate, getFiscalMonthPeriod, getPreviousFiscalMonth } from "@/lib/fiscal-month-utils";
 
 const ALL_FISCAL_MONTHS = [
-  { num: "01", nameAr: "يناير", nameEn: "Jan" },
-  { num: "02", nameAr: "فبراير", nameEn: "Feb" },
-  { num: "03", nameAr: "مارس", nameEn: "Mar" },
-  { num: "04", nameAr: "أبريل", nameEn: "Apr" },
-  { num: "05", nameAr: "مايو", nameEn: "May" },
-  { num: "06", nameAr: "يونيو", nameEn: "Jun" },
-  { num: "07", nameAr: "يوليو", nameEn: "Jul" },
-  { num: "08", nameAr: "أغسطس", nameEn: "Aug" },
-  { num: "09", nameAr: "سبتمبر", nameEn: "Sep" },
-  { num: "10", nameAr: "أكتوبر", nameEn: "Oct" },
-  { num: "11", nameAr: "نوفمبر", nameEn: "Nov" },
-  { num: "12", nameAr: "ديسمبر", nameEn: "Dec" },
+  { num: "01", nameAr: "يناير", nameEn: "January", shortEn: "Jan", quarter: "Q1" },
+  { num: "02", nameAr: "فبراير", nameEn: "February", shortEn: "Feb", quarter: "Q1" },
+  { num: "03", nameAr: "مارس", nameEn: "March", shortEn: "Mar", quarter: "Q1" },
+  { num: "04", nameAr: "أبريل", nameEn: "April", shortEn: "Apr", quarter: "Q2" },
+  { num: "05", nameAr: "مايو", nameEn: "May", shortEn: "May", quarter: "Q2" },
+  { num: "06", nameAr: "يونيو", nameEn: "June", shortEn: "Jun", quarter: "Q2" },
+  { num: "07", nameAr: "يوليو", nameEn: "July", shortEn: "Jul", quarter: "Q3" },
+  { num: "08", nameAr: "أغسطس", nameEn: "August", shortEn: "Aug", quarter: "Q3" },
+  { num: "09", nameAr: "سبتمبر", nameEn: "September", shortEn: "Sep", quarter: "Q3" },
+  { num: "10", nameAr: "أكتوبر", nameEn: "October", shortEn: "Oct", quarter: "Q4" },
+  { num: "11", nameAr: "نوفمبر", nameEn: "November", shortEn: "Nov", quarter: "Q4" },
+  { num: "12", nameAr: "ديسمبر", nameEn: "December", shortEn: "Dec", quarter: "Q4" },
 ];
 
 export function TimesheetView() {
@@ -68,16 +85,48 @@ export function TimesheetView() {
   
   const isAr = locale === "ar";
 
-  const isFiscalMonthActive = (monthValue: string) => {
-    const period = getFiscalMonthPeriod(monthValue);
-    const formatDate = (date: Date) => {
-      const y = date.getUTCFullYear();
-      const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-      const d = String(date.getUTCDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
-    return startDate === formatDate(period.startDate) && endDate === formatDate(period.endDate);
+  const currentFiscalMonthToday = useMemo(() => getFiscalMonthForDate(new Date()), []);
+
+  const formatDateUTC = (date: Date) => {
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
+
+  const formatShortDate = (date: Date) => {
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    return `${d}/${m}`;
+  };
+
+  const monthsData = useMemo(() => {
+    return ALL_FISCAL_MONTHS.map((m) => {
+      const monthValue = `${selectedFiscalYear}-${m.num}`;
+      const period = getFiscalMonthPeriod(monthValue);
+      const formattedStart = formatDateUTC(period.startDate);
+      const formattedEnd = formatDateUTC(period.endDate);
+      const isActive = startDate === formattedStart && endDate === formattedEnd;
+      const isTodayMonth = currentFiscalMonthToday === monthValue;
+      const dateRangeDisplay = `${formatShortDate(period.startDate)} → ${formatShortDate(period.endDate)}`;
+
+      return {
+        ...m,
+        value: monthValue,
+        period,
+        formattedStart,
+        formattedEnd,
+        dateRangeDisplay,
+        isActive,
+        isTodayMonth,
+        days: period.numberOfDays,
+      };
+    });
+  }, [selectedFiscalYear, startDate, endDate, currentFiscalMonthToday]);
+
+  const activeMonthInfo = useMemo(() => {
+    return monthsData.find((m) => m.isActive);
+  }, [monthsData]);
   
   const {
     rawPunches,
@@ -285,99 +334,276 @@ export function TimesheetView() {
       </div>
 
       {/* Control Panel */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <CardTitle className="text-lg">{isAr ? "استيراد البيانات من أجهزة البصمة" : "Import Biometric Data"}</CardTitle>
-          <CardDescription>
-            {isAr ? "اختر نطاق التاريخ لاستيراد البصمات مباشرة من قاعدة البيانات الرئيسية" : "Select date range to import punches directly from the main database"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-6 space-y-6">
-          <div className="space-y-4">
-            {/* Quick Ranges */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">{isAr ? "نطاقات زمنية سريعة" : "Quick Ranges"}</h3>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeToday}>{isAr ? "اليوم" : "Today"}</Button>
-                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeYesterday}>{isAr ? "أمس" : "Yesterday"}</Button>
-                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 font-semibold" onClick={setRangeThisMonth}>{isAr ? "هذا الشهر" : "This Month"}</Button>
-                <Button variant="secondary" size="sm" className="h-8 text-xs rounded-full" onClick={setRangeLastMonth}>{isAr ? "الشهر السابق" : "Last Month"}</Button>
+      <Card className="border border-border/80 shadow-md bg-gradient-to-b from-card to-card/90 overflow-hidden">
+        <CardHeader className="pb-4 border-b bg-muted/20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <CalendarRange className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold">
+                    {isAr ? "استيراد ومزامنة البصمات الشهرية" : "Biometric Attendance Sync"}
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    {isAr
+                      ? "اختر الشهر المالي أو حدد نطاقاً مخصصاً لاستيراد البصمات ومعالجتها تلقائياً"
+                      : "Select a fiscal month or custom date range to fetch and process punch records"}
+                  </CardDescription>
+                </div>
               </div>
             </div>
-            
-            {/* Fiscal Months (Full 12 Months with Year Switcher) */}
-            <div className="space-y-2.5 pt-3 border-t border-border/50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <h3 className="text-sm font-semibold text-foreground">{isAr ? "الشهور المالية" : "Fiscal Months"}</h3>
+
+            {/* Quick Ranges */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-background/80 p-1.5 rounded-xl border border-border/60 shadow-xs">
+              <span className="text-[11px] font-semibold px-2 text-muted-foreground">
+                {isAr ? "سريع:" : "Quick:"}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs rounded-lg px-2.5 hover:bg-muted font-medium"
+                onClick={setRangeToday}
+              >
+                {isAr ? "اليوم" : "Today"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs rounded-lg px-2.5 hover:bg-muted font-medium"
+                onClick={setRangeYesterday}
+              >
+                {isAr ? "أمس" : "Yesterday"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs rounded-lg px-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/50 font-semibold"
+                onClick={setRangeThisMonth}
+              >
+                {isAr ? "هذا الشهر المالي" : "This Month"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs rounded-lg px-2.5 hover:bg-muted font-medium"
+                onClick={setRangeLastMonth}
+              >
+                {isAr ? "الشهر السابق" : "Last Month"}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="pt-5 space-y-5">
+          {/* Fiscal Months Deck Header & Year Selector */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <h3 className="text-sm font-bold tracking-tight text-foreground flex items-center gap-2">
+                  {isAr ? "الشهور المالية لعام" : "Fiscal Months for"}
+                  <span className="text-emerald-600 dark:text-emerald-400 font-mono text-base">{selectedFiscalYear}</span>
+                </h3>
+              </div>
+
+              {/* Year Switcher Pills & Stepper */}
+              <div className="flex items-center gap-1.5">
+                <div className="hidden sm:flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/50 text-xs">
+                  {[2024, 2025, 2026, 2027].map((yr) => (
+                    <button
+                      key={yr}
+                      type="button"
+                      onClick={() => setSelectedFiscalYear(yr)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                        selectedFiscalYear === yr
+                          ? "bg-background text-emerald-600 dark:text-emerald-400 shadow-xs border border-border/80"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {yr}
+                    </button>
+                  ))}
                 </div>
-                <div className="flex items-center gap-1 bg-muted/60 px-2 py-0.5 rounded-lg border border-border/50 shadow-sm">
+
+                <div className="flex items-center gap-1 bg-muted/60 px-2 py-0.5 rounded-lg border border-border/60 shadow-xs">
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 rounded-md hover:bg-background"
-                    onClick={() => setSelectedFiscalYear(y => y - 1)}
+                    onClick={() => setSelectedFiscalYear((y) => y - 1)}
                     title={isAr ? "السنة السابقة" : "Previous Year"}
                   >
                     <ChevronRight className={`w-3.5 h-3.5 ${isAr ? "" : "rotate-180"}`} />
                   </Button>
-                  <span className="text-xs font-bold px-1.5 min-w-[3.2rem] text-center font-mono">
+                  <span className="text-xs font-bold px-1.5 min-w-[3rem] text-center font-mono">
                     {selectedFiscalYear}
                   </span>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 rounded-md hover:bg-background"
-                    onClick={() => setSelectedFiscalYear(y => y + 1)}
+                    onClick={() => setSelectedFiscalYear((y) => y + 1)}
                     title={isAr ? "السنة التالية" : "Next Year"}
                   >
                     <ChevronLeft className={`w-3.5 h-3.5 ${isAr ? "" : "rotate-180"}`} />
                   </Button>
                 </div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-1.5">
-                {ALL_FISCAL_MONTHS.map(m => {
-                  const monthValue = `${selectedFiscalYear}-${m.num}`;
-                  const active = isFiscalMonthActive(monthValue);
-                  return (
-                    <Button 
-                      key={monthValue}
-                      variant={active ? "default" : "outline"} 
-                      size="sm" 
-                      className={`h-8 text-xs font-medium transition-all ${
-                        active
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold border-emerald-600"
-                          : "border-dashed border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
-                      }`}
-                      onClick={() => setRangeByMonth(monthValue)}
-                    >
-                      {isAr ? m.nameAr : m.nameEn}
-                    </Button>
-                  );
-                })}
-              </div>
+            {/* 12 Fiscal Month Cards Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-2">
+              {monthsData.map((m) => {
+                const active = m.isActive;
+                return (
+                  <div
+                    key={m.value}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setRangeByMonth(m.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setRangeByMonth(m.value);
+                      }
+                    }}
+                    className={`relative group rounded-xl p-2.5 text-center cursor-pointer transition-all duration-200 flex flex-col justify-between select-none ${
+                      active
+                        ? "bg-gradient-to-b from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-500/25 ring-2 ring-emerald-500 ring-offset-2 ring-offset-background scale-[1.02]"
+                        : "bg-card/70 hover:bg-card border border-border/70 hover:border-emerald-500/50 hover:shadow-xs text-card-foreground"
+                    }`}
+                  >
+                    {/* Header tag: Month number & Current Badge */}
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span
+                        className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md ${
+                          active
+                            ? "bg-white/20 text-white"
+                            : "bg-muted text-muted-foreground group-hover:text-foreground"
+                        }`}
+                      >
+                        {m.num}
+                      </span>
+                      {m.isTodayMonth && (
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5 ${
+                            active
+                              ? "bg-emerald-300 text-emerald-950"
+                              : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                          {isAr ? "الحالي" : "Now"}
+                        </span>
+                      )}
+                      {active && !m.isTodayMonth && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-white/90" />
+                      )}
+                    </div>
+
+                    {/* Center: Month Name */}
+                    <div className="py-1">
+                      <p className={`text-sm font-bold leading-tight ${active ? "text-white" : "text-foreground"}`}>
+                        {isAr ? m.nameAr : m.shortEn}
+                      </p>
+                      <p
+                        className={`text-[10px] uppercase tracking-wider font-medium ${
+                          active ? "text-emerald-100" : "text-muted-foreground"
+                        }`}
+                      >
+                        {isAr ? m.shortEn : m.nameAr}
+                      </p>
+                    </div>
+
+                    {/* Footer: Date Range Preview & Days */}
+                    <div className="mt-1 pt-1.5 border-t border-border/40 flex flex-col items-center gap-0.5">
+                      <span
+                        className={`text-[10px] font-mono font-medium px-1 rounded ${
+                          active
+                            ? "bg-black/20 text-emerald-50"
+                            : "text-muted-foreground group-hover:text-foreground bg-muted/40"
+                        }`}
+                      >
+                        {m.dateRangeDisplay}
+                      </span>
+                      <span
+                        className={`text-[9px] ${
+                          active ? "text-emerald-100/90" : "text-muted-foreground/70"
+                        }`}
+                      >
+                        {m.days} {isAr ? "يوم" : "days"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className="p-4 bg-muted/40 rounded-xl border border-border/50 flex flex-col md:flex-row gap-4 items-end shadow-sm">
-            <div className="grid flex-1 w-full items-center gap-2">
-              <label htmlFor="start-date" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{isAr ? "من تاريخ" : "Start Date"}</label>
+          {/* Active Period Info Bar */}
+          {activeMonthInfo ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-900 dark:text-emerald-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <div className="text-xs">
+                  <span className="font-bold text-foreground">
+                    {isAr ? "الشهر المالي المختار:" : "Selected Fiscal Month:"}{" "}
+                  </span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                    {isAr ? activeMonthInfo.nameAr : activeMonthInfo.nameEn} {selectedFiscalYear}
+                  </span>
+                  <span className="mx-2 text-muted-foreground">•</span>
+                  <span className="font-mono text-muted-foreground">
+                    {activeMonthInfo.period.labelAr}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-background/50 font-mono text-xs">
+                  {activeMonthInfo.days} {isAr ? "يوماً في هذه الدورة" : "Days in cycle"}
+                </Badge>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/60 text-muted-foreground text-xs">
+              <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>
+                {isAr
+                  ? `نطاق زمني مخصص: من ${startDate} إلى ${endDate}`
+                  : `Custom Date Range: From ${startDate} to ${endDate}`}
+              </span>
+            </div>
+          )}
+
+          {/* Date Pickers & Fetch Action */}
+          <div className="p-4 bg-muted/30 rounded-2xl border border-border/70 flex flex-col md:flex-row gap-4 items-end shadow-xs">
+            <div className="grid flex-1 w-full items-center gap-1.5">
+              <label htmlFor="start-date" className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                {isAr ? "من تاريخ (بداية الفترة)" : "Start Date"}
+              </label>
               <Input
                 id="start-date"
                 type="date"
-                className="bg-background shadow-sm h-10"
+                className="bg-background shadow-xs h-10 font-mono text-sm border-border/80 focus:border-emerald-500"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
-            <div className="grid flex-1 w-full items-center gap-2">
-              <label htmlFor="end-date" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{isAr ? "إلى تاريخ" : "End Date"}</label>
+            <div className="grid flex-1 w-full items-center gap-1.5">
+              <label htmlFor="end-date" className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                {isAr ? "إلى تاريخ (نهاية الفترة)" : "End Date"}
+              </label>
               <Input
                 id="end-date"
                 type="date"
-                className="bg-background shadow-sm h-10"
+                className="bg-background shadow-xs h-10 font-mono text-sm border-border/80 focus:border-emerald-500"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -385,7 +611,7 @@ export function TimesheetView() {
             <Button 
               onClick={handleFetch} 
               disabled={isFetching || isProcessing || isSaving || !startDate || !endDate}
-              className="w-full md:w-auto h-10 px-8 shadow-sm"
+              className="w-full md:w-auto h-10 px-8 shadow-md bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:via-teal-700 hover:to-emerald-800 text-white font-semibold transition-all"
             >
               {isFetching || isProcessing ? (
                 <>

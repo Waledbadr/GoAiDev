@@ -147,7 +147,14 @@ export default function ServiceOrdersListPage() {
                     onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/inventory/service-orders/${o.codeShort}`); }}
                   >
                     <TableCell>
-                      {o.dateCreated ? format(o.dateCreated.toDate(), "PPP") : "—"}
+                      {o.dateCreated
+                        ? format(
+                            typeof (o.dateCreated as any).toDate === 'function'
+                              ? (o.dateCreated as any).toDate()
+                              : new Date(o.dateCreated),
+                            "PPP"
+                          )
+                        : "—"}
                     </TableCell>
                     <TableCell>{o.residenceName}</TableCell>
                     <TableCell>{o.destination?.name}</TableCell>
@@ -220,7 +227,14 @@ export default function ServiceOrdersListPage() {
                           onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/inventory/service-orders/${o.codeShort}`); }}
                         >
                           <TableCell>
-                            {o.dateCreated ? format(o.dateCreated.toDate(), "PPP") : "—"}
+                            {o.dateCreated
+                              ? format(
+                                  typeof (o.dateCreated as any).toDate === 'function'
+                                    ? (o.dateCreated as any).toDate()
+                                    : new Date(o.dateCreated),
+                                  "PPP"
+                                )
+                              : "—"}
                           </TableCell>
                           <TableCell>{o.residenceName}</TableCell>
                           <TableCell>{o.destination?.name}</TableCell>
