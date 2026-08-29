@@ -20,6 +20,8 @@ import {
   Users,
   Calendar,
   MapPin,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useLanguage } from '@/context/language-context';
 import { useToast } from '@/hooks/use-toast';
@@ -116,6 +118,7 @@ function TimesheetEmployeesContent() {
   const [selectedEmployee, setSelectedEmployee] = useState<HousingEmployee | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [transfersList, setTransfersList] = useState<any[]>([]);
+  const [isTransferredExpanded, setIsTransferredExpanded] = useState(false);
 
   // Fetch transfer records to enrich employee transfer info
   useEffect(() => {
@@ -152,7 +155,7 @@ function TimesheetEmployeesContent() {
     );
   }, [employees, searchTerm]);
 
-  // Split into Active (On-Duty / Regular) vs Transferred
+  // Split into Active (On-Duty / Regular) vs Transferred, placing 'On Leave' at bottom of active list
   const { activeEmployees, transferredEmployees } = useMemo(() => {
     const active: HousingEmployee[] = [];
     const transferred: HousingEmployee[] = [];
@@ -170,6 +173,16 @@ function TimesheetEmployeesContent() {
       } else {
         active.push(emp);
       }
+    });
+
+    // Sort active employees: Active on-duty employees first, employees on leave ('On Leave') at the bottom
+    active.sort((a, b) => {
+      const aIsLeave = a.status === 'On Leave' ? 1 : 0;
+      const bIsLeave = b.status === 'On Leave' ? 1 : 0;
+      if (aIsLeave !== bIsLeave) {
+        return aIsLeave - bIsLeave; // Active (0) first, On Leave (1) last
+      }
+      return (a.nameAr || a.name || '').localeCompare(b.nameAr || b.name || '');
     });
 
     return { activeEmployees: active, transferredEmployees: transferred };
@@ -403,116 +416,131 @@ function TimesheetEmployeesContent() {
         </CardContent>
       </Card>
 
-      {/* CARD 2: Transferred Employees Directory (سجل الموظفين المنقولين) */}
-      <Card className="border border-amber-200/80 dark:border-amber-900/60 shadow-sm overflow-hidden bg-amber-50/20 dark:bg-amber-950/10">
-        <CardHeader className="p-4 pb-3 flex flex-row items-center justify-between border-b border-amber-200/60 dark:border-amber-900/50 bg-amber-100/40 dark:bg-amber-950/30">
+      {/* CARD 2: Transferred Employees Directory (سجل الموظفين المنقولين) - Collapsible with Calming Palette */}
+      <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden bg-slate-50/50 dark:bg-slate-900/30 transition-all">
+        <CardHeader
+          onClick={() => setIsTransferredExpanded((prev) => !prev)}
+          className="p-4 pb-3 flex flex-row items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-100/60 dark:bg-slate-800/40 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-colors"
+        >
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-200/80 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold">
-              <ArrowLeftRight className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold">
+              <ArrowLeftRight className="w-4 h-4 text-slate-600 dark:text-slate-400" />
             </div>
             <div>
-              <CardTitle className="text-base font-semibold flex items-center gap-2 text-amber-950 dark:text-amber-200">
+              <CardTitle className="text-base font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
                 {isAr ? 'سجل الموظفين المنقولين (المتحولين)' : 'Transferred Employees Directory'}
-                <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-700 text-[11px] font-mono">
+                <Badge className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 text-[11px] font-mono">
                   {transferredEmployees.length} {isAr ? 'منقول' : 'transferred'}
                 </Badge>
               </CardTitle>
-              <CardDescription className="text-xs text-amber-800/80 dark:text-amber-300/70">
-                {isAr ? 'الموظفون الذين تم نقلهم أو تغيير موقع سكنهم/مشروعهم' : 'Employees transferred out or relocated to other sites/outside camps'}
+              <CardDescription className="text-xs text-muted-foreground">
+                {isAr ? 'الموظفون الذين تم نقلهم أو تغيير موقع سكنهم/مشروعهم (اضغط للعرض أو الطي)' : 'Employees transferred out or relocated (Click to expand or collapse)'}
               </CardDescription>
             </div>
           </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+            <span className="hidden sm:inline">
+              {isTransferredExpanded ? (isAr ? 'طي القائمة' : 'Collapse') : (isAr ? 'عرض القائمة' : 'Expand')}
+            </span>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60">
+              {isTransferredExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse min-w-[700px]">
-            <thead className="bg-amber-100/50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-semibold border-b border-amber-200/50">
-              <tr>
-                <th className="px-4 py-3">{isAr ? 'الموظف / الاسم' : 'Employee Name'}</th>
-                <th className="px-4 py-3">{isAr ? 'المهنة' : 'Profession'}</th>
-                <th className="px-4 py-3">{isAr ? 'تاريخ التحويل / الملاحظات' : 'Transfer Date / Details'}</th>
-                <th className="px-4 py-3">{isAr ? 'موقع التحويل / السكن' : 'Destination / Residence'}</th>
-                <th className="px-4 py-3">{isAr ? 'الحالة' : 'Status'}</th>
-                <th className="px-4 py-3 text-right">{isAr ? 'الإجراءات' : 'Actions'}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-amber-200/40 dark:divide-amber-900/30">
-              {loading ? (
+
+        {isTransferredExpanded && (
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse min-w-[700px]">
+              <thead className="bg-slate-100/50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-200 font-semibold border-b border-slate-200/60 dark:border-slate-800/60">
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    {isAr ? 'جاري التحميل...' : 'Loading...'}
-                  </td>
+                  <th className="px-4 py-3">{isAr ? 'الموظف / الاسم' : 'Employee Name'}</th>
+                  <th className="px-4 py-3">{isAr ? 'المهنة' : 'Profession'}</th>
+                  <th className="px-4 py-3">{isAr ? 'تاريخ التحويل / الملاحظات' : 'Transfer Date / Details'}</th>
+                  <th className="px-4 py-3">{isAr ? 'موقع التحويل / السكن' : 'Destination / Residence'}</th>
+                  <th className="px-4 py-3">{isAr ? 'الحالة' : 'Status'}</th>
+                  <th className="px-4 py-3 text-right">{isAr ? 'الإجراءات' : 'Actions'}</th>
                 </tr>
-              ) : transferredEmployees.length > 0 ? (
-                transferredEmployees.map((emp) => {
-                  const empId = String(emp.employeeId || emp.id).trim();
-                  const tr = employeeTransfersMap[empId];
-                  return (
-                    <tr key={emp.id} className="hover:bg-amber-100/40 dark:hover:bg-amber-950/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <UserCircle className="h-8 w-8 text-amber-600/70 shrink-0" />
-                          <div>
-                            <div className="font-semibold text-gray-900 dark:text-gray-100">{emp.nameAr}</div>
-                            <div className="text-[11px] text-muted-foreground font-mono">
-                              {emp.name} (#{emp.employeeId || emp.id})
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      {isAr ? 'جاري التحميل...' : 'Loading...'}
+                    </td>
+                  </tr>
+                ) : transferredEmployees.length > 0 ? (
+                  transferredEmployees.map((emp) => {
+                    const empId = String(emp.employeeId || emp.id).trim();
+                    const tr = employeeTransfersMap[empId];
+                    return (
+                      <tr key={emp.id} className="hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <UserCircle className="h-8 w-8 text-slate-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-gray-900 dark:text-gray-100">{emp.nameAr}</div>
+                              <div className="text-[11px] text-muted-foreground font-mono">
+                                {emp.name} (#{emp.employeeId || emp.id})
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                        <div className="flex items-center gap-1.5">
-                          <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{emp.professionAr || emp.profession || '-'}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-gray-700 dark:text-gray-300">
-                        {tr?.date ? (
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                           <div className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                            <span>{tr.date}</span>
-                            {tr.reason && <span className="text-[10px] text-muted-foreground">({tr.reason})</span>}
+                            <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{emp.professionAr || emp.profession || '-'}</span>
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                          <span>{tr?.location || emp.residenceLocation || emp.residenceStatus || 'خارج السكن'}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge className="bg-amber-500 text-white font-medium text-[11px]">
-                          {isAr ? 'منقول / تحويل' : 'Transferred'}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="outline" size="sm" asChild className="h-7 text-xs font-medium text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-100/60 dark:hover:bg-amber-950/60">
-                            <Link href={`/timesheet/employee-report?badgeId=${emp.employeeId || emp.id}`}>
-                              <UserCheck className="w-3.5 h-3.5 mr-1" />
-                              {isAr ? 'تقرير الدوام' : 'Timesheet'}
-                            </Link>
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => setSelectedEmployee(emp)}>
-                            {isAr ? 'تعديل' : 'Edit'}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    {isAr ? 'لا يوجد موظفون منقولون حالياً.' : 'No transferred employees found.'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </CardContent>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-gray-700 dark:text-gray-300">
+                          {tr?.date ? (
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                              <span>{tr.date}</span>
+                              {tr.reason && <span className="text-[10px] text-muted-foreground">({tr.reason})</span>}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                          <div className="flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{tr?.location || emp.residenceLocation || emp.residenceStatus || 'خارج السكن'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge className="bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200 font-medium text-[11px] border border-slate-300 dark:border-slate-700">
+                            {isAr ? 'منقول' : 'Transferred'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="outline" size="sm" asChild className="h-7 text-xs font-medium text-blue-600 dark:text-blue-400 border-border/80 hover:bg-slate-100 dark:hover:bg-slate-800">
+                              <Link href={`/timesheet/employee-report?badgeId=${emp.employeeId || emp.id}`}>
+                                <UserCheck className="w-3.5 h-3.5 mr-1" />
+                                {isAr ? 'تقرير الدوام' : 'Timesheet'}
+                              </Link>
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => setSelectedEmployee(emp)}>
+                              {isAr ? 'تعديل' : 'Edit'}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      {isAr ? 'لا يوجد موظفون منقولون حالياً.' : 'No transferred employees found.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        )}
       </Card>
 
       <AddEmployeeDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />

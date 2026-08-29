@@ -640,8 +640,10 @@ function EmployeeReportInner() {
     daysInMonth.forEach((dateStr) => {
       const dayOfWeek = new Date(dateStr).getDay();
       const isFriday = dayOfWeek === 5; // Friday
-      const todayStr = new Date().toISOString().substring(0, 10);
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const isFuture = dateStr > todayStr;
+      const isToday = dateStr === todayStr;
 
       // Do not include future dates in the report
       if (isFuture) return;
@@ -673,30 +675,50 @@ function EmployeeReportInner() {
       let deviceName = attRecord?.checkInDevice || attRecord?.deviceName || '-';
       let projectName = attRecord?.projectName || currentEmp?.projectName || '-';
 
-      if (attRecord && attRecord.status && attRecord.status !== 'Incomplete') {
+      let dayExpectedRH = 8.0;
+
+      const hasCompletedPunches =
+        (punches.length >= 2 || (checkIn && checkOut)) && (totalHours > 0 || regularHours > 0);
+
+      // Evaluate status dynamically, ignoring stale 'Future' status on elapsed or current dates
+      if (attRecord && attRecord.status && attRecord.status !== 'Incomplete' && attRecord.status !== 'Future') {
         status = attRecord.status;
-      } else if (attRecord && (totalHours > 0 || regularHours > 0 || (punches && punches.length > 0))) {
+      } else if (hasCompletedPunches || (attRecord && (totalHours > 0 || regularHours > 0))) {
         status = 'Present';
+      } else if (isToday) {
+        // Today is active and in-progress (shift not completed or only check-in recorded)
+        status = 'In Progress';
       } else if (activeEvent) {
         status = activeEvent.type === 'holiday' ? 'Holiday' : 'Reduced';
-        regularHours = activeEvent.requiredHours || 8;
+        regularHours = activeEvent.requiredHours || 8.0;
       } else if (isFriday) {
         status = 'Weekend';
-        regularHours = 8;
+        regularHours = 8.0;
       } else {
         status = 'Absent';
       }
 
+      // If present, apply standard timesheet scaling (8.0 RH base, excess as OT)
+      if (status === 'Present') {
+        if (attRecord && attRecord.regularHours !== undefined && attRecord.overtimeHours !== undefined && attRecord.regularHours > 0) {
+          regularHours = attRecord.regularHours;
+          overtimeHours = attRecord.overtimeHours;
+        } else if (totalHours > 0) {
+          regularHours = Math.min(8.0, totalHours);
+          overtimeHours = totalHours > 8.0 ? Math.round((totalHours - 8.0) * 10) / 10 : 0;
+        }
+      }
+
       // Overrides (Local real-time evaluation over stale backend status)
-      if (activeLeave && (!attRecord || totalHours === 0 || status === 'Absent' || status === 'Leave' || status === 'On Leave' || status === 'Sick Leave')) {
+      if (activeLeave && (!attRecord || totalHours === 0 || status === 'Absent' || status === 'Leave' || status === 'On Leave' || status === 'Sick Leave' || status === 'In Progress')) {
         status = (activeLeave.type === 'Sick' || activeLeave.type === 'مرضية') ? 'Sick Leave' : 
                  (activeLeave.type === 'Permission' || activeLeave.type === 'استئذان' ? 'Permission' : 'On Leave');
         if (totalHours === 0) {
-           regularHours = 8;
+           regularHours = 8.0;
         }
-      } else if (activeException && (!attRecord || totalHours === 0 || status === 'Absent')) {
+      } else if (activeException && (!attRecord || totalHours === 0 || status === 'Absent' || status === 'In Progress')) {
         status = 'Exception';
-      } else if (moveOutDate && dateStr >= moveOutDate && (!attRecord || totalHours === 0 || status === 'Absent')) {
+      } else if (moveOutDate && dateStr >= moveOutDate && (!attRecord || totalHours === 0 || status === 'Absent' || status === 'In Progress')) {
         status = 'Transferred';
       }
 
@@ -714,7 +736,8 @@ function EmployeeReportInner() {
         projectName,
         leaveType: activeLeave?.type || activeLeave?.leaveType,
         exceptionType: activeException?.type || activeException?.exceptionType,
-        isFriday
+        isFriday,
+        isToday,
       };
     });
 
@@ -732,23 +755,41 @@ function EmployeeReportInner() {
     let totalOT = 0;
     let expectedRH = 0;
     let expectedDays = 0;
+    let expectedWorkdays = 0;
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     Object.values(dailyMatrix).forEach((d: any) => {
       if (d.status === 'Future') return;
+
+      const isToday = d.date === todayStr;
+      const isTodayInProgress =
+        isToday &&
+        (d.status === 'In Progress' ||
+          (d.status === 'Present' &&
+            (!d.checkOut || d.totalHours === 0 || (d.punches && d.punches.length < 2))));
+
+      // If today's workday is still in progress, do not penalize expected days/hours
+      if (isTodayInProgress) {
+        if (d.regularHours > 0 || d.totalHours > 0) {
+          totalRH += d.regularHours || 0;
+          totalOT += d.overtimeHours || 0;
+        }
+        return;
+      }
+
       expectedDays++;
       
-      let dayExpectedRH = currentEmp?.dailyHours || 8;
-      const isThu = new Date(d.date).getDay() === 4;
-      if ((currentEmp?.dailyHours === 8.5 || !currentEmp?.dailyHours) && isThu) {
-         dayExpectedRH = 5.5;
-      }
-      
-      if (d.status === 'Leave' || d.status === 'On Leave' || d.status === 'Sick Leave' || d.status === 'Permission' || d.status === 'Weekend' || d.status === 'Holiday') {
-          dayExpectedRH = 8;
-      }
+      const dayExpectedRH = 8.0;
 
       if (d.status !== 'Transferred') {
          expectedRH += dayExpectedRH;
+      }
+
+      const isWorkday = d.status !== 'Weekend' && d.status !== 'Holiday' && d.status !== 'Transferred';
+      if (isWorkday) {
+        expectedWorkdays++;
       }
 
       if (d.status === 'Present' || d.status === 'Permission') {
@@ -759,26 +800,27 @@ function EmployeeReportInner() {
         daysAbsent++;
       } else if (d.status === 'Leave' || d.status === 'On Leave' || d.status === 'Sick Leave') {
         daysLeave++;
-        totalRH += 8;
+        totalRH += 8.0;
       } else if (d.status === 'Transferred') {
         daysTransferred++;
       } else if (d.status === 'Weekend' || d.status === 'Holiday') {
         daysWeekend++;
-        totalRH += 8;
+        totalRH += 8.0;
       } else if (d.status === 'Exception') {
         daysWorked++;
-        totalRH += d.regularHours || 8;
+        totalRH += d.regularHours || 8.0;
       }
     });
 
-    const attendanceRate = expectedRH > 0 ? Math.round((totalRH / expectedRH) * 100) : 0;
+    const attendanceRate = expectedRH > 0 ? Math.min(100, Math.round((totalRH / expectedRH) * 100)) : 0;
     const baseSalary = currentEmp?.monthlySalary || 3000;
-    const hourlyRate = baseSalary / 240; // ~240 hrs/month
+    const hourlyRate = baseSalary / 240; // ~240 hrs/month (30 days * 8 hrs)
     const otAmount = totalOT * hourlyRate * 1.5;
     const estimatedPayable = Math.round(baseSalary + otAmount);
 
     return {
       expectedDays,
+      expectedWorkdays,
       daysWorked,
       daysAbsent,
       daysLeave,
@@ -1117,7 +1159,7 @@ function EmployeeReportInner() {
                     {monthlyStats.attendanceRate}%
                   </span>
                   <span className="text-[11px] text-emerald-600 block">
-                    {monthlyStats.daysWorked} {isAr ? 'يوم عمل من' : 'days worked of'} {monthlyStats.expectedDays}
+                    {monthlyStats.daysWorked} {isAr ? 'يوم عمل من' : 'days worked of'} {monthlyStats.expectedWorkdays || monthlyStats.expectedDays}
                   </span>
                 </div>
                 <div className="w-12 h-12 rounded-full border-4 border-blue-500 flex items-center justify-center bg-blue-50 dark:bg-blue-950">
@@ -1292,6 +1334,9 @@ function EmployeeReportInner() {
                         <td className="p-3 border-l">
                           {d.status === 'Present' && (
                             <Badge className="bg-emerald-500 text-white">{isAr ? 'حاضر' : 'Present'}</Badge>
+                          )}
+                          {d.status === 'In Progress' && (
+                            <Badge className="bg-sky-500 text-white animate-pulse">{isAr ? 'قيد الدوام' : 'In Progress'}</Badge>
                           )}
                           {d.status === 'Absent' && (
                             <Badge variant="destructive">{isAr ? 'غائب' : 'Absent'}</Badge>
@@ -1704,6 +1749,7 @@ function EmployeeReportInner() {
                           <td className="p-0.5 border-l border-gray-300 text-center">{d.dayName}</td>
                           <td className="p-0.5 border-l border-gray-300 text-center">
                             {d.status === 'Present' && <span className="text-emerald-700 font-bold">حاضر</span>}
+                            {d.status === 'In Progress' && <span className="text-sky-700 font-bold">قيد الدوام</span>}
                             {d.status === 'Absent' && <span className="text-rose-700 font-bold">غائب</span>}
                             {(d.status === 'Leave' || d.status === 'On Leave') && <span className="text-indigo-700 font-bold">إجازة</span>}
                             {d.status === 'Sick Leave' && <span className="text-indigo-700 font-bold">مرضي</span>}
