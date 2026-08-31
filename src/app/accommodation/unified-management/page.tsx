@@ -181,11 +181,11 @@ export default function UnifiedManagementPage() {
     return () => unsubscribe();
   }, []);
 
-  // Filter accessible residences based on role
+  // Filter accessible residences based on role (active only)
   const accessibleResidences = useMemo(() => {
-    if (!currentUserId) return residences;
-    if (userRole === 'Admin') return residences;
-    return residences.filter(r => !r.managerId || r.managerId === currentUserId);
+    const active = residences.filter(r => (r as any).status !== 'Archived' && !(r as any).isHistorical && !r.disabled);
+    if (!currentUserId || userRole === 'Admin') return active;
+    return active.filter(r => !r.managerId || r.managerId === currentUserId);
   }, [residences, currentUserId, userRole]);
 
   // Get all nationalities

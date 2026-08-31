@@ -95,12 +95,12 @@ export interface MonthlyFinancial {
 // ─── Helpers ─────────────────────────────────────────────────────────────
 export function calcTotalIncome(income: Partial<Record<IncomeKey, number>>): number {
   if (!income) return 0;
-  return Object.values(income).reduce((s, v) => s + (v || 0), 0);
+  return Object.values(income).reduce((s: number, v) => s + (v || 0), 0);
 }
 
 export function calcTotalExpenses(expenses: Partial<Record<ExpenseCategoryKey, number>>): number {
   if (!expenses) return 0;
-  return Object.values(expenses).reduce((s, v) => s + (v || 0), 0);
+  return Object.values(expenses).reduce((s: number, v) => s + (v || 0), 0);
 }
 
 export function makeEmptyFinancial(

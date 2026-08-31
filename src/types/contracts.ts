@@ -321,6 +321,7 @@ export interface ContractAlert {
   sent: boolean;
   sentAt?: string;
   read: boolean;
+  isResolved?: boolean;
   createdAt: string;
 }
 
@@ -328,6 +329,7 @@ export interface ContractAlert {
 export interface ContractStats {
   totalContracts: number;
   activeContracts: number;
+  expiringContracts?: number;
   expiredContracts: number;
   suspendedContracts: number;
   draftContracts: number;
@@ -352,6 +354,7 @@ export interface ContractFormData {
   contractType: ContractType;
   contractCategory: ContractCategory;
 
+  firstPartyName?: string;
   partyType: PartyType;
   partyId: string;
   partyName: string;

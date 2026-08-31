@@ -92,7 +92,6 @@ export default function ContractsPage() {
     createContract, updateContract, deleteContract,
     renewContract, suspendContract, cancelContract, activateContract,
     generateMonthlyInvoices, getInvoicesByContract, updateInvoiceStatus,
-    searchContracts, filterContracts, checkExpiringContracts,
     reconcileContractLifecycle,
   } = useContracts();
   const { companies, residences } = useAccommodation();
@@ -165,7 +164,7 @@ export default function ContractsPage() {
       generateMonthlyInvoices();
     }
     if (urlAction === 'check-alerts') {
-      checkExpiringContracts();
+      reconcileContractLifecycle();
     }
   }, []);
 
@@ -1392,9 +1391,9 @@ export default function ContractsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50/80 dark:bg-gray-900/60 border-b border-gray-100 dark:border-gray-700/50">
-                  <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{c.invoiceNumber || 'Invoice #'}</TableHead>
-                  <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{c.party || 'Party'}</TableHead>
-                  <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{c.billingPeriod || 'Period'}</TableHead>
+                  <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{(c as any).invoiceNumber || 'Invoice #'}</TableHead>
+                  <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{(c as any).party || 'Party'}</TableHead>
+                  <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{(c as any).billingPeriod || 'Period'}</TableHead>
                   <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{c.amount || 'Amount'}</TableHead>
                   <TableHead className="font-semibold text-gray-700 dark:text-gray-300">{c.status || 'Status'}</TableHead>
                   <TableHead className={`font-semibold text-gray-700 dark:text-gray-300 ${isAr ? 'text-right' : 'text-left'}`}>{c.actions || 'Actions'}</TableHead>
@@ -1404,8 +1403,8 @@ export default function ContractsPage() {
                 {invoices.map((inv) => (
                   <TableRow key={inv.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 border-b border-gray-100 dark:border-gray-700/40">
                     <TableCell className="font-mono font-medium text-xs">{inv.invoiceNumber}</TableCell>
-                    <TableCell className="font-semibold text-sm">{inv.partyName}</TableCell>
-                    <TableCell className="text-xs text-gray-500">{inv.billingPeriod}</TableCell>
+                    <TableCell className="font-semibold text-sm">{(inv as any).partyName || (inv as any).companyName || '-'}</TableCell>
+                    <TableCell className="text-xs text-gray-500">{(inv as any).billingPeriod || inv.month || '-'}</TableCell>
                     <TableCell className="font-bold text-sm text-emerald-600 dark:text-emerald-400">{formatSAR(inv.amount)} {isAr ? 'ر.س' : 'SAR'}</TableCell>
                     <TableCell>
                       <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
@@ -1424,10 +1423,10 @@ export default function ContractsPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Pending">{c.pending || 'Pending'}</SelectItem>
-                          <SelectItem value="Paid">{c.paid || 'Paid'}</SelectItem>
-                          <SelectItem value="Overdue">{c.overdue || 'Overdue'}</SelectItem>
-                          <SelectItem value="Cancelled">{c.cancelled || 'Cancelled'}</SelectItem>
+                          <SelectItem value="Pending">{(c as any).pending || 'Pending'}</SelectItem>
+                          <SelectItem value="Paid">{(c as any).paid || 'Paid'}</SelectItem>
+                          <SelectItem value="Overdue">{(c as any).overdue || 'Overdue'}</SelectItem>
+                          <SelectItem value="Cancelled">{(c as any).cancelled || 'Cancelled'}</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>

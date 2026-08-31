@@ -290,7 +290,7 @@ export default function NewMRVApprovalPage() {
       const mmNoPad = (now.getMonth() + 1).toString();
       const counterId = `mrv-${yy}-${mm}`;
       let nextSeq = 0;
-      await runTransaction(db, async (trx) => {
+      await runTransaction(db!, async (trx) => {
         const counterRef = doc(db!, 'counters', counterId);
         const snap = await trx.get(counterRef);
         const current = (snap.exists() ? (snap.data() as any).seq : 0) || 0;
@@ -298,7 +298,7 @@ export default function NewMRVApprovalPage() {
         trx.set(counterRef, { seq: nextSeq, yy, mm, updatedAt: Timestamp.now() }, { merge: true });
       });
       const reservedMrvShort = `MRV-${yy}${mmNoPad}${nextSeq}`;
-      const reqRef = doc(collection(db, 'mrvRequests'));
+      const reqRef = doc(collection(db!, 'mrvRequests'));
       await setDoc(reqRef, {
         id: reqRef.id,
         residenceId,

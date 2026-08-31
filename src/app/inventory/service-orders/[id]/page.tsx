@@ -176,7 +176,7 @@ export default function ServiceOrderDetailsPage() {
                             ? format(
                                 typeof (order.dateCreated as any).toDate === 'function'
                                     ? (order.dateCreated as any).toDate()
-                                    : new Date(order.dateCreated),
+                                    : new Date(order.dateCreated as any),
                                 "PPP"
                               )
                             : "—"}

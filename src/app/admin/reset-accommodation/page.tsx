@@ -55,6 +55,7 @@ export default function ResetAccommodationPage() {
   };
 
   const deleteCollection = async (collectionName: string) => {
+    if (!db) return;
     const colRef = collection(db, collectionName);
     const snapshot = await getDocs(colRef);
     
@@ -84,6 +85,7 @@ export default function ResetAccommodationPage() {
   };
 
   const resetResidences = async () => {
+    if (!db) return;
     const residencesRef = collection(db, 'residences');
     const snapshot = await getDocs(residencesRef);
 

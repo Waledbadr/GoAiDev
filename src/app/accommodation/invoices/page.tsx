@@ -180,7 +180,7 @@ export default function InvoicesPage() {
 
   const handleMonthSelect = (monthStr: string) => {
     setSelectedMonth(monthStr);
-    const period = getFiscalMonthPeriod(monthStr, fiscalStartDay);
+    const period = getFiscalMonthPeriod(monthStr);
     setDateRange({ from: period.startDate, to: period.endDate });
   };
 

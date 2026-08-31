@@ -35,6 +35,9 @@ interface Building {
 interface Residence {
   id: string;
   name: string;
+  status?: string;
+  isHistorical?: boolean;
+  disabled?: boolean;
   buildings?: Building[];
   rooms?: Room[];
 }
@@ -78,6 +81,12 @@ export function ResidenceRoomSelector({
       o => o.roomId === roomId && o.residenceId === residenceId && !o.until
     ).length;
   };
+
+  const filteredResidences = useMemo(() => {
+    return (residences || []).filter(
+      r => (r.status !== 'Archived' && !r.isHistorical && !r.disabled) || r.id === value.residenceId
+    );
+  }, [residences, value.residenceId]);
 
   const selectedResidence = residences.find(r => r.id === value.residenceId);
   
@@ -153,9 +162,9 @@ export function ResidenceRoomSelector({
             <SelectValue placeholder="اختر المسكن" />
           </SelectTrigger>
           <SelectContent>
-            {residences.map(r => (
+            {filteredResidences.map(r => (
               <SelectItem key={r.id} value={r.id}>
-                {r.name}
+                {r.name}{r.status === 'Archived' || r.isHistorical || r.disabled ? ' (مؤرشف)' : ''}
               </SelectItem>
             ))}
           </SelectContent>

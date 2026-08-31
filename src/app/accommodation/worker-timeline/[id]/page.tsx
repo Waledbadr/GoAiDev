@@ -293,82 +293,119 @@ export default function WorkerTimelinePage() {
                         </CardHeader>
                         <CardContent className="space-y-2 text-sm">
                           {/* Location details based on action type */}
-                          {item.actionType === 'CHECK_IN' && (
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{item.residenceName || item.residenceId}</span>
-                              {item.roomName && ` - ${item.roomName}`}
-                            </div>
-                          )}
-                          
-                          {item.actionType === 'CHECK_OUT' && (
-                            <>
-                              <div className="flex items-center gap-2">
-                                <MapPin className="h-4 w-4 text-muted-foreground" />
-                                <span className="font-medium">{item.residenceName || item.residenceId}</span>
-                                {item.roomName && ` - ${item.roomName}`}
-                              </div>
-                              {item.duration && (
-                                <div className="flex items-center gap-2 text-muted-foreground">
-                                  <Clock className="h-4 w-4" />
-                                  مدة الإقامة: {item.duration} يوم
+                          {(() => {
+                            const isArchived = (name?: string, id?: string) => {
+                              return /palestine|فلسطين|old wood|منجرة|خشب|gypsum|جبس|remal 2|الرمال 2/i.test(name || '') ||
+                                     /palestine|فلسطين|old wood|منجرة|خشب|gypsum|جبس|remal 2|الرمال 2/i.test(id || '') ||
+                                     id === '6w8r1vh1h8xjpOsVULV5' || id === 'KA43UwlETuLC7bWffony' || id === 'Axbap5tRt6FJZjVpTjCJ' || id === 'res_remal_2';
+                            };
+                            const fmtRes = (name?: string, id?: string) => {
+                              const base = name || (id?.startsWith('res_') ? id.replace(/^res_/, '') : id) || '—';
+                              return isArchived(name, id) ? `${base} (مؤرشف)` : base;
+                            };
+
+                            if (item.actionType === 'CHECK_IN') {
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium">{fmtRes(item.residenceName, item.residenceId)}</span>
+                                  {item.roomName && ` - ${item.roomName}`}
                                 </div>
-                              )}
-                            </>
-                          )}
+                              );
+                            }
+
+                            if (item.actionType === 'CHECK_OUT') {
+                              return (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                                    <span className="font-medium">{fmtRes(item.residenceName, item.residenceId)}</span>
+                                    {item.roomName && ` - ${item.roomName}`}
+                                  </div>
+                                  {item.duration && (
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                      <Clock className="h-4 w-4" />
+                                      مدة الإقامة: {item.duration} يوم
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            }
+
+                            if (item.actionType === 'TRANSFER') {
+                              return (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 text-red-600">
+                                    <LogOut className="h-4 w-4" />
+                                    من: {fmtRes(item.fromResidenceName, item.fromResidenceId)}
+                                    {item.fromRoomName && ` - ${item.fromRoomName}`}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-green-600">
+                                    <LogIn className="h-4 w-4" />
+                                    إلى: {fmtRes(item.toResidenceName, item.toResidenceId)}
+                                    {item.toRoomName && ` - ${item.toRoomName}`}
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (item.actionType === 'SWAP') {
+                              return (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-muted-foreground" />
+                                    تبديل مع: {item.swappedWithWorkerName || item.swappedWithWorkerId}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-red-600">
+                                    <LogOut className="h-4 w-4" />
+                                    من: {fmtRes(item.fromResidenceName, item.fromResidenceId)}
+                                    {item.fromRoomName && ` - ${item.fromRoomName}`}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-green-600">
+                                    <LogIn className="h-4 w-4" />
+                                    إلى: {fmtRes(item.toResidenceName, item.toResidenceId)}
+                                    {item.toRoomName && ` - ${item.toRoomName}`}
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return null;
+                          })()}
                           
-                          {item.actionType === 'TRANSFER' && (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2 text-red-600">
-                                <LogOut className="h-4 w-4" />
-                                من: {item.fromResidenceName || item.fromResidenceId}
-                                {item.fromRoomName && ` - ${item.fromRoomName}`}
+                          {/* Notes / Reason */}
+                          {(() => {
+                            const rawList = [item.notes, item.reason].filter(Boolean) as string[];
+                            let displayNote = '';
+                            for (const raw of rawList) {
+                              let text = raw.replace(/^(ملاحظات|سبب الخروج|سبب التسكين|السبب|Notes?|Reason)\s*:\s*/i, '').trim();
+                              text = text.replace(/^["'«»“”\(]+|["'«»“”\)]+$/g, '').trim();
+                              if (
+                                !text ||
+                                /^سجل\s+تسكين\s+تاريخي(\s+\d+)?$/i.test(text) ||
+                                /^مزامنة\s+النظام\s+القديم(\s*\(?\d*\)?)?$/i.test(text) ||
+                                /^تسكين\s+فترة\s+/i.test(text) ||
+                                /^خروج\s+مسجل\s+في\s+/i.test(text) ||
+                                text === 'خروج من السكن' ||
+                                text === 'system_sync' ||
+                                text === 'Synced from legacy system' ||
+                                /^Auto-archived/i.test(text)
+                              ) {
+                                continue;
+                              }
+                              displayNote = text;
+                              break;
+                            }
+                            if (!displayNote) return null;
+                            return (
+                              <div className="pt-2 border-t text-sm font-medium text-slate-800">
+                                <span>{displayNote}</span>
                               </div>
-                              <div className="flex items-center gap-2 text-green-600">
-                                <LogIn className="h-4 w-4" />
-                                إلى: {item.toResidenceName || item.toResidenceId}
-                                {item.toRoomName && ` - ${item.toRoomName}`}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {item.actionType === 'SWAP' && (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <User className="h-4 w-4 text-muted-foreground" />
-                                تبديل مع: {item.swappedWithWorkerName || item.swappedWithWorkerId}
-                              </div>
-                              <div className="flex items-center gap-2 text-red-600">
-                                <LogOut className="h-4 w-4" />
-                                من: {item.fromResidenceName || item.fromResidenceId}
-                                {item.fromRoomName && ` - ${item.fromRoomName}`}
-                              </div>
-                              <div className="flex items-center gap-2 text-green-600">
-                                <LogIn className="h-4 w-4" />
-                                إلى: {item.toResidenceName || item.toResidenceId}
-                                {item.toRoomName && ` - ${item.toRoomName}`}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Reason */}
-                          {item.reason && (
-                            <div className="pt-2 border-t">
-                              <span className="text-muted-foreground">السبب: </span>
-                              <span>{item.reason}</span>
-                            </div>
-                          )}
-                          
-                          {/* Notes */}
-                          {item.notes && (
-                            <div className={item.reason ? '' : 'pt-2 border-t'}>
-                              <span className="text-muted-foreground">ملاحظات: </span>
-                              <span>{item.notes}</span>
-                            </div>
-                          )}
+                            );
+                          })()}
                           
                           {/* Performed by */}
-                          {item.actionByName && (
+                          {item.actionByName && !item.actionByName.includes('مزامنة') && (
                             <div className="text-xs text-muted-foreground pt-2">
                               بواسطة: {item.actionByName}
                             </div>

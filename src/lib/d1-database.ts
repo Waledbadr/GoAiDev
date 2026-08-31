@@ -135,6 +135,18 @@ class D1DatabaseEngine {
     return count;
   }
 
+  public saveCollection<T = any>(collectionName: string, docs: T[]): void {
+    this.ensureInitialized();
+    const colMap = new Map<string, any>();
+    if (Array.isArray(docs)) {
+      docs.forEach((d: any) => {
+        if (d && d.id) colMap.set(String(d.id), d);
+      });
+    }
+    this.cache.set(collectionName, colMap);
+    this.persist();
+  }
+
   public updateDocument<T = any>(collectionName: string, docId: string, updates: Partial<T>): T | null {
     this.ensureInitialized();
     const colMap = this.cache.get(collectionName);

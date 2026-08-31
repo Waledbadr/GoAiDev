@@ -208,16 +208,16 @@ export function ContractStudioDialog({
 
   // Handle Company / Party Quick Fill
   const handleSelectCompany = (companyId: string) => {
-    const found = companies.find((c) => c.id === companyId);
+    const found: any = companies.find((c: any) => c.id === companyId);
     if (found) {
       setFormData((prev) => ({
         ...prev,
         partyId: found.id,
         partyName: found.name,
         partyType: 'company',
-        partyContact: found.contactPerson || prev.partyContact,
-        partyPhone: found.phone || prev.partyPhone,
-        partyEmail: found.email || prev.partyEmail,
+        partyContact: found.contactPerson || found.contactPhone || prev.partyContact,
+        partyPhone: found.phone || found.contactPhone || prev.partyPhone,
+        partyEmail: found.email || found.contactEmail || prev.partyEmail,
       }));
     }
   };

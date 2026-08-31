@@ -90,6 +90,8 @@ export interface FileUploadAreaProps {
   error?: string;
   /** Whether to show image previews */
   showImagePreview?: boolean;
+  /** Whether the component is in read-only mode */
+  viewOnly?: boolean;
 }
 
 const allowedTypesList = [

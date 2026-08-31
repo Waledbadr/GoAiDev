@@ -97,14 +97,14 @@ export async function POST(req: NextRequest) {
     let nextPageToken: string | undefined = undefined;
 
     do {
-      const { users, pageToken } = await auth.listUsers(MAX_PER_PAGE, nextPageToken);
-      for (const u of users) {
+      const listResult: any = await auth.listUsers(MAX_PER_PAGE, nextPageToken);
+      for (const u of listResult.users) {
         const email = String(u.email || '').trim().toLowerCase();
         if (keep.has(email)) { kept++; keptUsers.push({ email, uid: u.uid }); continue; }
         await auth.deleteUser(u.uid);
         deleted++;
       }
-      nextPageToken = pageToken || undefined;
+      nextPageToken = listResult.pageToken || undefined;
     } while (nextPageToken);
 
   return NextResponse.json({ deleted, kept, keptUsers });

@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, AlertTriangle, AlertCircle, Users, Building2, FileText, Download, LayoutDashboard } from 'lucide-react';
+import { TrendingUp, AlertTriangle, AlertCircle, Users, Building2, FileText, Download, LayoutDashboard, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ReportsPage() {
@@ -197,7 +197,27 @@ export default function ReportsPage() {
       </div>
 
       {/* Printable Reports Quick Access */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Link href="/accommodation/reports/monthly-billing">
+          <Card className="border-indigo-500/40 bg-indigo-50/20 dark:bg-indigo-950/20 hover:bg-indigo-50/50 transition-all cursor-pointer h-full shadow-sm">
+            <CardHeader className="p-4">
+              <CardTitle className="text-sm font-bold flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                <CreditCard className="h-4 w-4 text-indigo-600" />
+                فاتورة إشغال العمالة (In/Out)
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/accommodation/reports/residence-audit">
+          <Card className="border-border hover:bg-muted/50 transition-all cursor-pointer h-full shadow-sm">
+            <CardHeader className="p-4">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                مطابقة السكن الميداني (Audit)
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
         <Link href="/accommodation/reports/daily-housing">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
             <CardHeader className="p-4">

@@ -121,11 +121,11 @@ export default function OrderDetailPage() {
     };
 
     useEffect(() => {
-        if (typeof id !== 'string') return;
+        if (!id || typeof id !== 'string') return;
         setLoading(true);
         async function fetchOrder() {
             try {
-                const data = await d1Client.getDoc<any>('orders', id);
+                const data = await d1Client.getDoc<any>('orders', id as string);
                 if (data) {
                     const itemsArray = normalizeItems(data.items);
                     const normalizedData = { ...data, items: itemsArray };

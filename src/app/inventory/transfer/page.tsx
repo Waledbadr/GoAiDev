@@ -126,7 +126,7 @@ export default function TransferHistoryPage() {
                                             ? format(
                                                 typeof (transfer.date as any).toDate === 'function'
                                                     ? (transfer.date as any).toDate()
-                                                    : new Date(transfer.date),
+                                                    : new Date(transfer.date as any),
                                                 'PPP'
                                               )
                                             : '-'}
@@ -185,7 +185,7 @@ export default function TransferHistoryPage() {
                                 {dict.typeLabel}: <span className="font-medium text-foreground">TRANSFER</span>
                             </div>
                             <div>
-                                {dict.date}: {selected.date ? format(typeof (selected.date as any).toDate === 'function' ? (selected.date as any).toDate() : new Date(selected.date), 'PPP p') : '-'}
+                                {dict.date}: {selected.date ? format(typeof (selected.date as any).toDate === 'function' ? (selected.date as any).toDate() : new Date(selected.date as any), 'PPP p') : '-'}
                             </div>
                             <div>
                                 {dict.referenceLabel}: <span className="font-mono">{formatTrsId(selected.codeShort)}</span>

@@ -67,6 +67,7 @@ export async function POST(req: Request) {
     const body = Buffer.from(arrayBuffer);
 
     const put = await getBlobPut();
+    if (!put) throw new Error('Blob put is not available');
 
     const { url } = await put(blobPath, body, {
       access: 'public',

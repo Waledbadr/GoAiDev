@@ -549,7 +549,7 @@ export function CreateTransferDialog({ isOpen, onOpenChange, preSelectedWorkers 
                 <Select value={toResidenceId} onValueChange={setToResidenceId}>
                   <SelectTrigger><SelectValue placeholder={t("selectResidence")} /></SelectTrigger>
                   <SelectContent>
-                    {residences?.map((residence: any) => (
+                    {residences?.filter((r: any) => r.status !== 'Archived' && !r.isHistorical && !r.disabled).map((residence: any) => (
                       <SelectItem key={residence.id} value={residence.id}>{getLocalizedName(residence, locale)}</SelectItem>
                     ))}
                   </SelectContent>

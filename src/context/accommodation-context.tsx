@@ -69,6 +69,9 @@ export type Residence = {
   location?: Location;
   managerId?: string; // Added managerId
   isEmergencyMode?: boolean; // Added isEmergencyMode
+  status?: 'Active' | 'Archived' | 'Maintenance' | string;
+  isHistorical?: boolean;
+  disabled?: boolean;
   buildings?: Building[]; // optional — some APIs return nested buildings/floors
   rooms?: Room[]; // fallback when buildings are not present
   facilities?: any[]; // Added for reporting
@@ -705,6 +708,9 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
       location: complex.location || null,
       managerId: complex.managerId,
       isEmergencyMode: complex.isEmergencyMode,
+      status: complex.status || (complex.disabled ? 'Archived' : 'Active'),
+      isHistorical: complex.isHistorical || complex.status === 'Archived' || !!complex.disabled,
+      disabled: complex.disabled,
       buildings: Array.isArray(complex.buildings)
         ? complex.buildings.map((b: any) => ({
           id: b.id,
@@ -718,24 +724,38 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     };
   }
 
-  // Load residences, companies, and workers from Cloudflare D1 engine directly
+  // Load residences, companies, workers, and occupants from Cloudflare D1 engine directly
   useEffect(() => {
     async function loadFromD1() {
       try {
-        const d1Res = await d1Client.getDocs('residences');
+        const [d1Res, d1Comp, d1Workers, d1Occupants, d1Contracts] = await Promise.all([
+          d1Client.getDocs<any>('residences'),
+          d1Client.getDocs<Company>('companies'),
+          d1Client.getDocs<Worker>('workers'),
+          d1Client.getDocs<Occupant>('occupants'),
+          d1Client.getDocs<Contract>('contracts'),
+        ]);
+
         if (d1Res && d1Res.length > 0) {
           const activeDocs = d1Res.filter((d: any) => !d.disabled);
           setResidences(activeDocs.map(mapComplexToResidence));
         }
 
-        const d1Comp = await d1Client.getDocs<Company>('companies');
         if (d1Comp && d1Comp.length > 0) {
           setCompanies(d1Comp);
         }
 
-        const d1Workers = await d1Client.getDocs<Worker>('workers');
         if (d1Workers && d1Workers.length > 0) {
           setWorkers(d1Workers);
+        }
+
+        if (d1Occupants && d1Occupants.length > 0) {
+          const activeOccupants = d1Occupants.filter((o: any) => !o.until);
+          setOccupants(activeOccupants);
+        }
+
+        if (d1Contracts && d1Contracts.length > 0) {
+          setContracts(d1Contracts);
         }
       } catch (e) {
         console.warn('D1 initial load error in accommodation:', e);
@@ -751,10 +771,24 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     const unsubscribeAuth = onAuthStateChanged(_auth, async (user) => {
       if (user) {
         try {
-          const d1Res = await d1Client.getDocs<any>('residences');
+          const [d1Res, d1Occupants, d1Workers] = await Promise.all([
+            d1Client.getDocs<any>('residences'),
+            d1Client.getDocs<Occupant>('occupants'),
+            d1Client.getDocs<Worker>('workers'),
+          ]);
+
           if (d1Res && d1Res.length > 0) {
             const activeDocs = d1Res.filter((d: any) => !d.disabled);
             setResidences(activeDocs.map(mapComplexToResidence));
+          }
+
+          if (d1Occupants && d1Occupants.length > 0) {
+            const activeOccupants = d1Occupants.filter((o: any) => !o.until);
+            setOccupants(activeOccupants);
+          }
+
+          if (d1Workers && d1Workers.length > 0) {
+            setWorkers(d1Workers);
           }
         } catch (e) {
           console.warn("Accommodation: D1 residences load error", e);
@@ -774,12 +808,24 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
   // Provide a safe refresh function that re-runs the load logic when called.
   const refresh = async () => {
     try {
-      const stored = typeof window !== "undefined" ? localStorage.getItem("estatecare_residences") : null;
-      if (stored) {
-        const parsed = JSON.parse(stored || "[]");
-        // Filter out disabled residences from cache
-        const activeResidences = (parsed || []).filter((d: any) => !d.disabled);
-        setResidences(activeResidences.map(mapComplexToResidence));
+      const [d1Res, d1Occupants, d1Workers] = await Promise.all([
+        d1Client.getDocs<any>('residences'),
+        d1Client.getDocs<Occupant>('occupants'),
+        d1Client.getDocs<Worker>('workers'),
+      ]);
+
+      if (d1Res && d1Res.length > 0) {
+        const activeDocs = d1Res.filter((d: any) => !d.disabled);
+        setResidences(activeDocs.map(mapComplexToResidence));
+      }
+
+      if (d1Occupants && d1Occupants.length > 0) {
+        const activeOccupants = d1Occupants.filter((o: any) => !o.until);
+        setOccupants(activeOccupants);
+      }
+
+      if (d1Workers && d1Workers.length > 0) {
+        setWorkers(d1Workers);
       }
     } catch (e) {
       console.error("Accommodation refresh failed", e);
@@ -833,12 +879,12 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     if (!db || !auth) return;
 
     let unsubscribeAuth: (() => void) | null = null;
-    let companiesUnsub: Unsubscribe | null = null;
-    let contractsUnsub: Unsubscribe | null = null;
-    let invoicesUnsub: Unsubscribe | null = null;
-    let occupantsUnsub: Unsubscribe | null = null;
-    let historyUnsub: Unsubscribe | null = null;
-    let transfersUnsub: Unsubscribe | null = null;
+    let companiesUnsub: (() => void) | null = null;
+    let contractsUnsub: (() => void) | null = null;
+    let invoicesUnsub: (() => void) | null = null;
+    let occupantsUnsub: (() => void) | null = null;
+    let historyUnsub: (() => void) | null = null;
+    let transfersUnsub: (() => void) | null = null;
 
     unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -857,12 +903,12 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
         }
       } else {
         console.log('🔓 [D1 Engine] User logged out, cleaning up...');
-        if (companiesUnsub) companiesUnsub();
-        if (contractsUnsub) contractsUnsub();
-        if (invoicesUnsub) invoicesUnsub();
-        if (occupantsUnsub) occupantsUnsub();
+        if (companiesUnsub) (companiesUnsub as any)();
+        if (contractsUnsub) (contractsUnsub as any)();
+        if (invoicesUnsub) (invoicesUnsub as any)();
+        if (occupantsUnsub) (occupantsUnsub as any)();
         if (historyUnsub) (historyUnsub as any)();
-        if (transfersUnsub) transfersUnsub();
+        if (transfersUnsub) (transfersUnsub as any)();
 
         setCompanies([]);
         setContracts([]);
@@ -874,13 +920,13 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
     });
 
     return () => {
-      if (unsubscribeAuth) unsubscribeAuth();
-      if (companiesUnsub) companiesUnsub();
-      if (contractsUnsub) contractsUnsub();
-      if (invoicesUnsub) invoicesUnsub();
-      if (occupantsUnsub) occupantsUnsub();
+      if (unsubscribeAuth) (unsubscribeAuth as any)();
+      if (companiesUnsub) (companiesUnsub as any)();
+      if (contractsUnsub) (contractsUnsub as any)();
+      if (invoicesUnsub) (invoicesUnsub as any)();
+      if (occupantsUnsub) (occupantsUnsub as any)();
       if (historyUnsub) (historyUnsub as any)();
-      if (transfersUnsub) transfersUnsub();
+      if (transfersUnsub) (transfersUnsub as any)();
     };
   }, [db, auth]);
 
@@ -2124,7 +2170,7 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
         startDate = customRange.startDate;
         endDate = customRange.endDate;
       } else {
-        const period = getFiscalMonthPeriod(month, customStartDay);
+        const period = getFiscalMonthPeriod(month);
         startDate = period.startDate;
         endDate = period.endDate;
       }
@@ -2366,14 +2412,112 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
 
   // Async History Fetching
   async function fetchWorkerHistory(workerId: string): Promise<AccommodationHistory[]> {
-    if (!db) return [];
     try {
-      const q = query(collection(db, 'accommodationHistory'), where('workerId', '==', workerId));
-      const snap = await getDocs(q);
-      return snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as AccommodationHistory))
-        .filter(h => h.notes !== 'Auto-archived from occupants collection')
-        .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
+      const allHistory: AccommodationHistory[] = [];
+      const historyKeySet = new Set<string>();
+
+      // Resolve target worker identifiers
+      const targetWorker = workers.find(w => w.id === workerId || w.employeeId === workerId || `w_${w.employeeId}` === workerId);
+      const possibleIds = new Set<string>([workerId]);
+      if (targetWorker) {
+        if (targetWorker.id) possibleIds.add(targetWorker.id);
+        if (targetWorker.employeeId) {
+          possibleIds.add(String(targetWorker.employeeId));
+          possibleIds.add(`w_${targetWorker.employeeId}`);
+        }
+      }
+
+      // 1. Try D1 client
+      const d1Hist = await d1Client.getDocs<AccommodationHistory>('accommodation_history');
+      if (d1Hist && d1Hist.length > 0) {
+        const matched = d1Hist.filter(h =>
+          possibleIds.has(h.workerId) ||
+          (targetWorker && h.workerName && h.workerName === targetWorker.name)
+        );
+        for (const h of matched) {
+          const key = `${h.actionType}_${h.actionDate}_${h.roomId}`;
+          if (!historyKeySet.has(key)) {
+            historyKeySet.add(key);
+            allHistory.push(h);
+          }
+        }
+      }
+
+      // 2. Fallback to Firestore if available
+      if (db) {
+        for (const id of Array.from(possibleIds)) {
+          const q = query(collection(db, 'accommodationHistory'), where('workerId', '==', id));
+          const snap = await getDocs(q);
+          for (const d of snap.docs) {
+            const h = { id: d.id, ...d.data() } as AccommodationHistory;
+            if (h.notes !== 'Auto-archived from occupants collection') {
+              const key = `${h.actionType}_${h.actionDate}_${h.roomId}`;
+              if (!historyKeySet.has(key)) {
+                historyKeySet.add(key);
+                allHistory.push(h);
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Synthesize current active or past stays from occupants if not already in history
+      const d1Occs = await d1Client.getDocs<any>('occupants').catch(() => occupants);
+      const targetOccs = (d1Occs || occupants).filter((o: any) => possibleIds.has(o.workerId));
+      for (const occ of targetOccs) {
+        if (occ.since) {
+          const inKey = `CHECK_IN_${occ.since}_${occ.roomId}`;
+          if (!historyKeySet.has(inKey)) {
+            historyKeySet.add(inKey);
+            allHistory.push({
+              id: `hist_synth_in_${occ.id}`,
+              workerId: occ.workerId,
+              workerName: occ.workerName || targetWorker?.name,
+              actionType: 'CHECK_IN',
+              actionDate: occ.since,
+              actionBy: occ.checkInBy || 'system',
+              actionByName: 'سجل التسكين النشط',
+              residenceId: occ.residenceId,
+              residenceName: occ.residenceName,
+              buildingName: occ.buildingName,
+              floorName: occ.floorName,
+              roomId: occ.roomId,
+              roomName: occ.roomName,
+              notes: occ.notes || 'تسكين نشط حالياً بالسكن',
+              reason: 'التسكين الحالي',
+              createdAt: occ.createdAt || new Date().toISOString(),
+            });
+          }
+        }
+
+        if (occ.until) {
+          const outKey = `CHECK_OUT_${occ.until}_${occ.roomId}`;
+          if (!historyKeySet.has(outKey)) {
+            historyKeySet.add(outKey);
+            allHistory.push({
+              id: `hist_synth_out_${occ.id}`,
+              workerId: occ.workerId,
+              workerName: occ.workerName || targetWorker?.name,
+              actionType: 'CHECK_OUT',
+              actionDate: occ.until,
+              actionBy: occ.checkOutBy || 'system',
+              actionByName: 'سجل الخروج',
+              residenceId: occ.residenceId,
+              residenceName: occ.residenceName,
+              buildingName: occ.buildingName,
+              floorName: occ.floorName,
+              roomId: occ.roomId,
+              roomName: occ.roomName,
+              checkoutType: occ.checkoutType || 'Exit',
+              notes: occ.notes || 'خروج مسجل',
+              reason: 'خروج من السكن',
+              createdAt: occ.updatedAt || new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      return allHistory.sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
     } catch (e) {
       console.error("Failed to fetch worker history", e);
       return [];
@@ -2381,21 +2525,75 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
   }
 
   async function fetchRoomHistory(roomId: string): Promise<AccommodationHistory[]> {
-    if (!db) return [];
     try {
-      // Fetch history where room is involved as main room, from room, or to room
-      const q1 = query(collection(db, 'accommodationHistory'), where('roomId', '==', roomId));
-      const q2 = query(collection(db, 'accommodationHistory'), where('toRoomId', '==', roomId));
-      const q3 = query(collection(db, 'accommodationHistory'), where('fromRoomId', '==', roomId));
+      const allHistory: AccommodationHistory[] = [];
+      const historyKeySet = new Set<string>();
 
-      const [s1, s2, s3] = await Promise.all([getDocs(q1), getDocs(q2), getDocs(q3)]);
+      // 1. Try D1 client first
+      const d1Hist = await d1Client.getDocs<AccommodationHistory>('accommodation_history');
+      if (d1Hist && d1Hist.length > 0) {
+        const matched = d1Hist.filter(
+          h => h.roomId === roomId || h.toRoomId === roomId || h.fromRoomId === roomId
+        );
+        for (const h of matched) {
+          const key = `${h.actionType}_${h.actionDate}_${h.workerId}`;
+          if (!historyKeySet.has(key)) {
+            historyKeySet.add(key);
+            allHistory.push(h);
+          }
+        }
+      }
 
-      const allDocs = [...s1.docs, ...s2.docs, ...s3.docs];
-      // Deduplicate by ID
-      const uniqueDocs = Array.from(new Map(allDocs.map(d => [d.id, d])).values());
+      // 2. Fallback to Firestore
+      if (db) {
+        const q1 = query(collection(db, 'accommodationHistory'), where('roomId', '==', roomId));
+        const q2 = query(collection(db, 'accommodationHistory'), where('toRoomId', '==', roomId));
+        const q3 = query(collection(db, 'accommodationHistory'), where('fromRoomId', '==', roomId));
 
-      return uniqueDocs.map(d => ({ id: d.id, ...d.data() } as AccommodationHistory))
-        .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
+        const [s1, s2, s3] = await Promise.all([getDocs(q1), getDocs(q2), getDocs(q3)]);
+
+        const allDocs = [...s1.docs, ...s2.docs, ...s3.docs];
+        for (const d of allDocs) {
+          const h = { id: d.id, ...d.data() } as AccommodationHistory;
+          const key = `${h.actionType}_${h.actionDate}_${h.workerId}`;
+          if (!historyKeySet.has(key)) {
+            historyKeySet.add(key);
+            allHistory.push(h);
+          }
+        }
+      }
+
+      // 3. Synthesize from current room occupants
+      const d1Occs = await d1Client.getDocs<any>('occupants').catch(() => occupants);
+      const roomOccs = (d1Occs || occupants).filter((o: any) => o.roomId === roomId);
+      for (const occ of roomOccs) {
+        if (occ.since) {
+          const inKey = `CHECK_IN_${occ.since}_${occ.workerId}`;
+          if (!historyKeySet.has(inKey)) {
+            historyKeySet.add(inKey);
+            allHistory.push({
+              id: `hist_room_synth_in_${occ.id}`,
+              workerId: occ.workerId,
+              workerName: occ.workerName,
+              actionType: 'CHECK_IN',
+              actionDate: occ.since,
+              actionBy: occ.checkInBy || 'system',
+              actionByName: 'سجل التسكين النشط',
+              residenceId: occ.residenceId,
+              residenceName: occ.residenceName,
+              buildingName: occ.buildingName,
+              floorName: occ.floorName,
+              roomId: occ.roomId,
+              roomName: occ.roomName,
+              notes: occ.notes || 'تسكين نشط حالياً',
+              reason: 'شاغل حالي للغرفة',
+              createdAt: occ.createdAt || new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      return allHistory.sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
     } catch (e) {
       console.error("Failed to fetch room history", e);
       return [];
@@ -4115,37 +4313,38 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
       console.warn('⚠️ [Dashboard] DB not available');
       return DEFAULT_STATS;
     }
+    const firestore = db;
 
     // Helper to perform a single Firestore fetch of dashboard stats
     const fetchOnce = async (): Promise<DashboardStats> => {
       console.log('📊 [Dashboard] Refreshing stats from Firestore...');
 
       // 1. Global counts
-      const workersCount = (await getCountFromServer(collection(db, 'workers'))).data().count;
+      const workersCount = (await getCountFromServer(collection(firestore, 'workers'))).data().count;
       // Only count ACTIVE occupants (where until is null)
       const occupantsCount = (await getCountFromServer(
-        query(collection(db, 'occupants'), where('until', '==', null))
+        query(collection(firestore, 'occupants'), where('until', '==', null))
       )).data().count;
-      const companiesCount = (await getCountFromServer(collection(db, 'companies'))).data().count;
+      const companiesCount = (await getCountFromServer(collection(firestore, 'companies'))).data().count;
 
       // 2. Active Contracts (status = Active)
       const activeContractsCount = (await getCountFromServer(
-        query(collection(db, 'contracts'), where('status', '==', 'Active'))
+        query(collection(firestore, 'contracts'), where('status', '==', 'Active'))
       )).data().count;
 
       // 3. Pending Transfers (status = Pending)
       const pendingTransfersCount = (await getCountFromServer(
-        query(collection(db, 'transferRequests'), where('status', '==', 'Pending'))
+        query(collection(firestore, 'transferRequests'), where('status', '==', 'Pending'))
       )).data().count;
 
       // 4. Unpaid Invoices (status = Pending or Overdue)
       const unpaidInvoicesCount = (await getCountFromServer(
-        query(collection(db, 'invoices'), where('status', 'in', ['Pending', 'Overdue']))
+        query(collection(firestore, 'invoices'), where('status', 'in', ['Pending', 'Overdue']))
       )).data().count;
 
       // 5. Overdue Invoices (status = Overdue)
       const overdueInvoicesCount = (await getCountFromServer(
-        query(collection(db, 'invoices'), where('status', '==', 'Overdue'))
+        query(collection(firestore, 'invoices'), where('status', '==', 'Overdue'))
       )).data().count;
 
       // 6. Occupancy by Residence
@@ -4157,7 +4356,7 @@ export function AccommodationProvider({ children }: { children: React.ReactNode 
       // Instead of N aggregation queries (one per residence), fetch all active
       // occupants once and aggregate counts by residenceId in memory.
       const activeOccSnapshot = await getDocs(
-        query(collection(db, 'occupants'), where('until', '==', null))
+        query(collection(firestore, 'occupants'), where('until', '==', null))
       );
 
       activeOccSnapshot.forEach(docSnap => {

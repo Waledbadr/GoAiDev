@@ -34,7 +34,13 @@ export function AddLeaveDialog({ open, onOpenChange, defaultType = 'Annual', ini
 
   const [submitting, setSubmitting] = useState(false);
   const [openEmployeeList, setOpenEmployeeList] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    employeeId: string;
+    type: 'Annual' | 'Sick' | 'Permission' | 'Resumption' | string;
+    startDate: string;
+    endDate: string;
+    reason: string;
+  }>({
     employeeId: '',
     type: defaultType,
     startDate: format(new Date(), 'yyyy-MM-dd'),

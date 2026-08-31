@@ -854,7 +854,7 @@ function EmployeeReportInner() {
   const handleExportExcel = () => {
     if (!currentEmp) return;
 
-    const rows = [
+    const rows: (string | number)[][] = [
       ['تقرير دوام الموظف الشامل / Employee Timesheet Report'],
       [`الموظف: ${currentEmp.nameAr} (${currentEmp.name})`, `رقم الوظيفي: ${currentEmp.employeeId || currentEmp.badgeId}`],
       [`المهنة: ${currentEmp.professionAr || currentEmp.profession}`, `الفترة: ${periodLabel} (${filterMonth})`],

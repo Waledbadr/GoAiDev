@@ -136,7 +136,7 @@ function IncomeExpenseTransactionsContent() {
       group: { key: string; labelAr: string; labelEn: string };
       items: (typeof kindTypes)[number][];
     };
-    const grouped = FINANCE_GROUPS.map((g) => ({
+    const grouped: GroupOption[] = FINANCE_GROUPS.map((g) => ({
       group: g,
       items: kindTypes.filter((t) => t.groupKey === g.key),
     })).filter((x) => x.items.length > 0);

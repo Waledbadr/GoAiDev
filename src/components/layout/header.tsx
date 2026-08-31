@@ -2,7 +2,7 @@
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Bell, Sun, Moon, Check, Monitor, Palette, LogOut, Package, CheckCircle2, ArrowLeftRight, Languages, MessageSquare, Info, PackageCheck, BellRing, PlusCircle, Download, Truck, ClipboardList, Wrench, Boxes, Home, Clock, Wallet, FileText, UserPlus, Building2, Receipt, BarChart3, CalendarOff, Users, History, TrendingUp, PieChart } from 'lucide-react';
+import { Bell, Sun, Moon, Check, Monitor, Palette, LogOut, Package, CheckCircle2, ArrowLeftRight, Languages, MessageSquare, Info, PackageCheck, BellRing, PlusCircle, Download, Truck, ClipboardList, Wrench, Boxes, Home, Clock, Wallet, FileText, UserPlus, Building2, Receipt, BarChart3, CalendarOff, Users, History, TrendingUp, PieChart, Sparkles, Bot } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useLanguage } from '@/context/language-context';
 import { cn } from '@/lib/utils';
@@ -386,6 +386,30 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
   {/* Feedback trigger in header */}
   <FeedbackWidget />
 
+      {/* AI Copilot trigger button */}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full relative text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('open-estate-copilot'));
+                }
+              }}
+            >
+              <Sparkles className="h-5 w-5 animate-pulse" />
+              <span className="sr-only">{isAr ? 'المساعد الذكي' : 'AI Copilot'}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{isAr ? 'المساعد الذكي (AI Copilot)' : 'AI Copilot Assistant'}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       {/* Theme direct toggle button */}
       <TooltipProvider>
         <Tooltip>
@@ -466,7 +490,7 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
                           {formatDistanceToNow(
                             notification.createdAt && typeof (notification.createdAt as any).toDate === 'function'
                               ? (notification.createdAt as any).toDate()
-                              : new Date(notification.createdAt || Date.now()),
+                              : new Date((notification.createdAt as any) || Date.now()),
                             { addSuffix: true }
                           )}
                         </span>

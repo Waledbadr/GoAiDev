@@ -313,7 +313,7 @@ export default function DashboardPage() {
                                                         ? format(
                                                             typeof (miv.date as any).toDate === 'function'
                                                                 ? (miv.date as any).toDate()
-                                                                : new Date(miv.date),
+                                                                : new Date(miv.date as any),
                                                             'PPP'
                                                           )
                                                         : '-'}

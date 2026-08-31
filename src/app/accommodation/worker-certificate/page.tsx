@@ -84,10 +84,8 @@ const translations = {
     transfers: 'Swaps',
     totalDays: 'Total Days',
     recentHistory: 'Recent Movement History',
-    moreRecords: 'more records',
-    checkIn: 'Check In',
-checkOut: 'Out',
     checkIn: 'In',
+    checkOut: 'Out',
     checkInNotes: 'Check-in Notes',
     checkOutNotes: 'Check-out Notes',
     transfer: 'Swap',
@@ -261,11 +259,26 @@ export default function WorkerCertificatePage() {
   }, [occupants, selectedWorker]);
 
   const getResidenceName = (residenceId: string) => {
-    return residences.find(r => r.id === residenceId)?.name || residenceId;
+    if (!residenceId) return '—';
+    const found = residences.find(r => r && (r.id === residenceId || (r.name && r.name.toLowerCase() === residenceId.toLowerCase())));
+    if (found) {
+      const isArchived = found.status === 'Archived' || found.isHistorical || found.disabled;
+      return isArchived ? `${found.name} (مؤرشف)` : found.name;
+    }
+    const isArchivedName = /palestine|فلسطين|old wood|منجرة|خشب|gypsum|جبس|remal 2|الرمال 2|haras|حرس|naseem|نسيم|khaiat|خياط|عتيبية|صالحية|بطحاء|بن لادن|ميقات|فروسية|مخطط البنك/i.test(residenceId);
+    if (isArchivedName) {
+      let cleanName = residenceId.startsWith('res_') ? residenceId.replace(/^res_/, '') : residenceId;
+      return `${cleanName} (مؤرشف)`;
+    }
+
+    if (residenceId.startsWith('res_')) {
+      return residenceId.replace(/^res_/, '');
+    }
+    return residenceId;
   };
 
   const getRoomFullPath = (residenceId: string, roomId: string) => {
-    const residence = residences.find(r => r.id === residenceId);
+    const residence = residences.find(r => r.id === residenceId || r.name.toLowerCase() === residenceId.toLowerCase());
     if (!residence) return { city: '', housing: '', building: '', floor: '', room: roomId, fullPath: roomId };
 
     const city = residence.city || '';
@@ -274,7 +287,7 @@ export default function WorkerCertificatePage() {
     if (residence.buildings) {
       for (const building of residence.buildings) {
         for (const floor of building.floors || []) {
-          const room = floor.rooms?.find(r => r.id === roomId);
+          const room = floor.rooms?.find(r => r.id === roomId || r.name === roomId);
           if (room) {
             return {
               city,
@@ -384,17 +397,170 @@ export default function WorkerCertificatePage() {
     return label;
   }
 
+  const getActionLabel = (type: string) => {
+    switch (type) {
+      case 'CHECK_IN': return t.checkIn;
+      case 'CHECK_OUT': return t.checkOut;
+      case 'TRANSFER': return t.transfer;
+      case 'SWAP': return t.swap;
+      default: return type;
+    }
+  };
+
+  const getActionColor = (type: string) => {
+    switch (type) {
+      case 'CHECK_IN': return 'text-green-700 bg-green-50';
+      case 'CHECK_OUT': return 'text-red-700 bg-red-50';
+      case 'TRANSFER': return 'text-blue-700 bg-blue-50';
+      case 'SWAP': return 'text-purple-700 bg-purple-50';
+      default: return 'text-gray-700 bg-gray-50';
+    }
+  };
+
+  const getRoleLabel = (role?: string) => {
+    switch (role) {
+      case 'Supervisor': return t.supervisor;
+      case 'Engineer': return t.engineer;
+      default: return t.worker;
+    }
+  };
+
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'Active':
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">{t.active}</Badge>;
+      case 'Transferring':
+        return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">{t.transferring}</Badge>;
+      case 'Vacation':
+        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">{t.vacation}</Badge>;
+      case 'Exit':
+        return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">{t.exit}</Badge>;
+      default:
+        return <Badge variant="outline">{t.notSpecified}</Badge>;
+    }
+  };
+
+  const calculateDays = (since: string) => {
+    const sinceDate = new Date(since);
+    const today = new Date();
+    sinceDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const diffTime = today.getTime() - sinceDate.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const days = diffDays + 1;
+    return `${days} ${days === 1 ? t.day : t.days}`;
+  };
+
+  const formatDuration = (totalDays: number): string => {
+    if (totalDays <= 0) return '—';
+    const years = Math.floor(totalDays / 365);
+    const remainingAfterYears = totalDays % 365;
+    const months = Math.floor(remainingAfterYears / 30);
+    const days = remainingAfterYears % 30;
+    const parts: string[] = [];
+    if (years > 0) parts.push(locale === 'ar' ? `${years}س` : `${years}y`);
+    if (months > 0) parts.push(locale === 'ar' ? `${months}ش` : `${months}m`);
+    if (days > 0 || parts.length === 0) parts.push(locale === 'ar' ? `${days}ي` : `${days}d`);
+    return parts.join(' ');
+  };
+
+  const historyWithDurations = useMemo(() => {
+    const sortedHistory = [...workerHistory].sort((a, b) =>
+      new Date(a.actionDate).getTime() - new Date(b.actionDate).getTime()
+    );
+    let lastCheckInDate: Date | null = null;
+    const durationsMap = new Map<string, number>();
+    for (const record of sortedHistory) {
+      if (record.actionType === 'CHECK_IN') {
+        lastCheckInDate = new Date(record.actionDate);
+        lastCheckInDate.setHours(0, 0, 0, 0);
+      } else if (record.actionType === 'CHECK_OUT' && lastCheckInDate) {
+        const checkOutDate = new Date(record.actionDate);
+        checkOutDate.setHours(0, 0, 0, 0);
+        const diffTime = checkOutDate.getTime() - lastCheckInDate.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const duration = Math.max(diffDays + 1, 1);
+        durationsMap.set(record.id, duration);
+        lastCheckInDate = null;
+      }
+    }
+    return durationsMap;
+  }, [workerHistory]);
+
+  const getFormattedDuration = (item: AccommodationHistory): string | null => {
+    if (item.actionType !== 'CHECK_OUT') return null;
+    const calculatedDuration = historyWithDurations.get(item.id);
+    if (calculatedDuration) {
+      return formatDuration(calculatedDuration);
+    }
+    if (item.duration) {
+      return formatDuration(item.duration);
+    }
+    return null;
+  };
+
+  const lastCheckIn = useMemo(() => {
+    if (!workerHistory || workerHistory.length === 0) return null;
+    const checkIns = [...workerHistory].filter(h => h.actionType === 'CHECK_IN');
+    if (checkIns.length === 0) return null;
+    checkIns.sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
+    return checkIns[0].actionDate;
+  }, [workerHistory]);
+
+  /**
+   * Helper to clean notes/reasons and discard boilerplate like "سجل تسكين تاريخي 2026" or "ملاحظات: "
+   */
+  const extractCleanNote = (notes?: string | null, reason?: string | null): string => {
+    const candidates = [notes, reason].filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
+
+    for (const raw of candidates) {
+      let text = raw.trim();
+      // 1. Remove prefixes like "ملاحظات:", "سبب الخروج:", "السبب:", "Notes:", etc.
+      text = text.replace(/^(ملاحظات|سبب الخروج|سبب التسكين|السبب|Notes?|Reason)\s*:\s*/i, '').trim();
+
+      // 2. Strip surrounding quotes or parentheses
+      text = text.replace(/^["'«»“”\(]+|["'«»“”\)]+$/g, '').trim();
+
+      // 3. Skip system sync boilerplate
+      if (
+        !text ||
+        /^سجل\s+تسكين\s+تاريخي(\s+\d+)?$/i.test(text) ||
+        /^مزامنة\s+النظام\s+القديم(\s*\(?\d*\)?)?$/i.test(text) ||
+        /^تسكين\s+فترة\s+/i.test(text) ||
+        /^خروج\s+مسجل\s+في\s+/i.test(text) ||
+        text === 'خروج من السكن' ||
+        text === 'تسكين' ||
+        text === 'system_sync' ||
+        text === 'Synced from legacy system' ||
+        text === 'Occupied' ||
+        /^Auto-archived/i.test(text)
+      ) {
+        continue;
+      }
+
+      return text;
+    }
+    return '';
+  };
+
   const summarizedHistory = useMemo(() => {
     const summaries: Array<any> = [];
     const fmtResidence = (rName?: string, roomName?: string, rId?: string, rmId?: string) => {
-      let finalRName = rName;
-      let finalRoomName = roomName;
-
-      if (!finalRName && rId) {
+      let finalRName = '';
+      if (rId) {
         finalRName = getResidenceName(rId);
       }
-      if (!finalRoomName && rId && rmId) {
-        finalRoomName = getRoomFullPath(rId, rmId).room;
+      if ((!finalRName || finalRName === rId) && rName) {
+        finalRName = getResidenceName(rName);
+      }
+      if (!finalRName && rName) {
+        finalRName = rName;
+      }
+
+      let finalRoomName = roomName;
+      if (rId && rmId) {
+        const p = getRoomFullPath(rId, rmId).room;
+        if (p && p !== rmId) finalRoomName = p;
       }
 
       return finalRName ? (finalRoomName ? `${finalRName} • ${finalRoomName}` : finalRName) : t.notSpecified;
@@ -403,8 +569,16 @@ export default function WorkerCertificatePage() {
     for (const g of groupedHistory) {
       if (g.type === 'single') {
         const item = g.item as AccommodationHistory;
-        const startNotes = item.actionType === 'CHECK_IN' ? [item.reason ? `(${item.reason})` : null, item.notes ? `"${item.notes}"` : null].filter(Boolean).join(' ') : '—';
-        const endNotes = item.actionType === 'CHECK_OUT' ? [getCheckoutLabel((item as any).checkoutType), item.reason ? `(${item.reason})` : null, item.notes ? `"${item.notes}"` : null].filter(Boolean).join(' ') : '—';
+        const cleanStart = extractCleanNote(item.notes, item.reason);
+        const startNotes = item.actionType === 'CHECK_IN' ? (cleanStart || '—') : '—';
+
+        let cleanEnd = extractCleanNote(item.notes, item.reason);
+        if (!cleanEnd && item.actionType === 'CHECK_OUT') {
+          const lbl = getCheckoutLabel((item as any).checkoutType);
+          if (lbl && lbl !== 'Check-out' && lbl !== 'خروج') cleanEnd = lbl;
+        }
+        const endNotes = item.actionType === 'CHECK_OUT' ? (cleanEnd || '—') : '—';
+
         summaries.push({
           id: item.id,
           startDate: new Date(item.actionDate),
@@ -414,7 +588,7 @@ export default function WorkerCertificatePage() {
           startNotes,
           endNotes,
           duration: item.actionType === 'CHECK_OUT' ? getFormattedDuration(item) : '—',
-          startReason: item.reason,
+          startReason: cleanStart || item.reason,
           startActionType: item.actionType,
         });
       } else if (g.type === 'period') {
@@ -488,18 +662,19 @@ export default function WorkerCertificatePage() {
           }
         }
 
-        const startParts = [] as string[];
-        if (start.reason) startParts.push(`(${start.reason})`);
-        if (start.notes) startParts.push(`"${start.notes}"`);
-        const startNotes = startParts.length ? startParts.join(' ') : '—';
+        const cleanStart = extractCleanNote(start.notes, start.reason);
+        const startNotes = cleanStart || '—';
+
+        let cleanEnd = extractCleanNote(end?.notes, end?.reason);
+        if (hasCheckout && !cleanEnd) {
+          const checkoutLabel = getCheckoutLabel((end as any).checkoutType);
+          if (checkoutLabel && checkoutLabel !== 'Check-out' && checkoutLabel !== 'خروج') {
+            cleanEnd = checkoutLabel;
+          }
+        }
 
         const endParts = [] as string[];
-        if (hasCheckout) {
-          const checkoutLabel = getCheckoutLabel((end as any).checkoutType);
-          if (checkoutLabel) endParts.push(checkoutLabel);
-          if (end.reason) endParts.push(`(${end.reason})`);
-          if (end.notes) endParts.push(`"${end.notes}"`);
-        }
+        if (cleanEnd) endParts.push(cleanEnd);
         if (transfers.length > 0) endParts.push(`(${transfers.length} ${t.transfers})`);
         const endNotes = endParts.length ? endParts.join(' ') : '—';
 
@@ -521,7 +696,7 @@ export default function WorkerCertificatePage() {
           startNotes,
           endNotes,
           duration,
-          startReason: start.reason,
+          startReason: cleanStart || start.reason,
           startActionType: start.actionType,
           startResidenceId: start.residenceId,
           startRoomId: start.roomId,
@@ -534,116 +709,6 @@ export default function WorkerCertificatePage() {
   }, [groupedHistory, residences, t]);
 
   const handlePrint = () => window.print();
-
-  const lastCheckIn = useMemo(() => {
-    if (!workerHistory || workerHistory.length === 0) return null;
-    const checkIns = [...workerHistory].filter(h => h.actionType === 'CHECK_IN');
-    if (checkIns.length === 0) return null;
-    checkIns.sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
-    return checkIns[0].actionDate;
-  }, [workerHistory]);
-
-  const getRoleLabel = (role?: string) => {
-    switch (role) {
-      case 'Supervisor': return t.supervisor;
-      case 'Engineer': return t.engineer;
-      default: return t.worker;
-    }
-  };
-
-  const getStatusBadge = (status?: string) => {
-    switch (status) {
-      case 'Active':
-        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">{t.active}</Badge>;
-      case 'Transferring':
-        return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">{t.transferring}</Badge>;
-      case 'Vacation':
-        return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">{t.vacation}</Badge>;
-      case 'Exit':
-        return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">{t.exit}</Badge>;
-      default:
-        return <Badge variant="outline">{t.notSpecified}</Badge>;
-    }
-  };
-
-  const getActionLabel = (type: string) => {
-    switch (type) {
-      case 'CHECK_IN': return t.checkIn;
-      case 'CHECK_OUT': return t.checkOut;
-      case 'TRANSFER': return t.transfer;
-      case 'SWAP': return t.swap;
-      default: return type;
-    }
-  };
-
-  const getActionColor = (type: string) => {
-    switch (type) {
-      case 'CHECK_IN': return 'text-green-700 bg-green-50';
-      case 'CHECK_OUT': return 'text-red-700 bg-red-50';
-      case 'TRANSFER': return 'text-blue-700 bg-blue-50';
-      case 'SWAP': return 'text-purple-700 bg-purple-50';
-      default: return 'text-gray-700 bg-gray-50';
-    }
-  };
-
-  const calculateDays = (since: string) => {
-    const sinceDate = new Date(since);
-    const today = new Date();
-    sinceDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-    const diffTime = today.getTime() - sinceDate.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    const days = diffDays + 1;
-    return `${days} ${days === 1 ? t.day : t.days}`;
-  };
-
-  const formatDuration = (totalDays: number): string => {
-    if (totalDays <= 0) return '—';
-    const years = Math.floor(totalDays / 365);
-    const remainingAfterYears = totalDays % 365;
-    const months = Math.floor(remainingAfterYears / 30);
-    const days = remainingAfterYears % 30;
-    const parts: string[] = [];
-    if (years > 0) parts.push(locale === 'ar' ? `${years}س` : `${years}y`);
-    if (months > 0) parts.push(locale === 'ar' ? `${months}ش` : `${months}m`);
-    if (days > 0 || parts.length === 0) parts.push(locale === 'ar' ? `${days}ي` : `${days}d`);
-    return parts.join(' ');
-  };
-
-  const historyWithDurations = useMemo(() => {
-    const sortedHistory = [...workerHistory].sort((a, b) =>
-      new Date(a.actionDate).getTime() - new Date(b.actionDate).getTime()
-    );
-    let lastCheckInDate: Date | null = null;
-    const durationsMap = new Map<string, number>();
-    for (const record of sortedHistory) {
-      if (record.actionType === 'CHECK_IN') {
-        lastCheckInDate = new Date(record.actionDate);
-        lastCheckInDate.setHours(0, 0, 0, 0);
-      } else if (record.actionType === 'CHECK_OUT' && lastCheckInDate) {
-        const checkOutDate = new Date(record.actionDate);
-        checkOutDate.setHours(0, 0, 0, 0);
-        const diffTime = checkOutDate.getTime() - lastCheckInDate.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        const duration = Math.max(diffDays + 1, 1);
-        durationsMap.set(record.id, duration);
-        lastCheckInDate = null;
-      }
-    }
-    return durationsMap;
-  }, [workerHistory]);
-
-  const getFormattedDuration = (item: AccommodationHistory): string | null => {
-    if (item.actionType !== 'CHECK_OUT') return null;
-    const calculatedDuration = historyWithDurations.get(item.id);
-    if (calculatedDuration) {
-      return formatDuration(calculatedDuration);
-    }
-    if (item.duration) {
-      return formatDuration(item.duration);
-    }
-    return null;
-  };
 
   const documentNo = useMemo(() => {
     if (!selectedWorker) return '';
@@ -700,7 +765,7 @@ export default function WorkerCertificatePage() {
                           <div className="font-medium">{worker.name}</div>
                           <div className="text-sm text-muted-foreground flex items-center gap-2">
                             {worker.employeeId && <span>#{worker.employeeId}</span>}
-                            {worker.nationaliy && <span>• {worker.nationaliy}</span>}
+                            {((worker as any).nationality || worker.nationaliy) && <span>• {((worker as any).nationality || worker.nationaliy)}</span>}
                           </div>
                         </div>
                       </div>
@@ -765,7 +830,13 @@ export default function WorkerCertificatePage() {
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                         <div className="flex justify-between border-b border-dashed pb-0.5">
                           <span className="text-slate-500">{t.idNumber}</span>
-                          <span className="font-mono text-[10px]">{selectedWorker.idNumber || t.notRegistered}</span>
+                          <span className="font-mono text-[10px]">
+                            {selectedWorker.idNumber ||
+                              (selectedWorker as any).nationalId ||
+                              (selectedWorker as any).iqamaNo ||
+                              (selectedWorker.id?.startsWith('w_iq_') ? selectedWorker.id.replace('w_iq_', '') : '') ||
+                              t.notRegistered}
+                          </span>
                         </div>
                         <div className="flex justify-between border-b border-dashed pb-0.5">
                           <span className="text-slate-500">{t.employeeNumber}</span>
@@ -773,15 +844,15 @@ export default function WorkerCertificatePage() {
                         </div>
                         <div className="flex justify-between border-b border-dashed pb-0.5">
                           <span className="text-slate-500">{t.nationality}</span>
-                          <span>{selectedWorker.nationaliy || t.notSpecified}</span>
+                          <span>{((selectedWorker as any).nationality || selectedWorker.nationaliy || t.notSpecified)}</span>
                         </div>
                         <div className="flex justify-between border-b border-dashed pb-0.5">
                           <span className="text-slate-500">{t.jobTitle}</span>
-                          <span>{getRoleLabel(selectedWorker.role)}</span>
+                          <span>{((selectedWorker as any).occupation || (selectedWorker as any).profession || getRoleLabel(selectedWorker.role))}</span>
                         </div>
                         <div className="flex justify-between border-b border-dashed pb-0.5 col-span-2">
                           <span className="text-slate-500">{t.company}</span>
-                          <span>{getCompanyName(selectedWorker.company)}</span>
+                          <span>{((selectedWorker as any).sponsor || getCompanyName(selectedWorker.company))}</span>
                         </div>
                       </div>
                     </div>
@@ -820,7 +891,7 @@ export default function WorkerCertificatePage() {
                                   </div>
                                   <div className="min-w-0">
                                     <div className="text-[7px] text-sky-600 font-semibold uppercase">{t.housing}</div>
-                                    <div className="text-[10px] font-bold text-sky-900 truncate leading-tight">{roomPath.housing}</div>
+                                    <div className="text-[10px] font-bold text-sky-900 truncate leading-tight">{getResidenceName(currentOccupancy.residenceId) || roomPath.housing}</div>
                                   </div>
                                 </div>
                               </div>
@@ -1006,7 +1077,7 @@ export default function WorkerCertificatePage() {
                         startDate: currStart,
                         endDate: currEnd,
                         title: curr.residence,
-                        subtitle: curr.startReason || curr.startNotes || (curr.startActionType === 'CHECK_IN' ? 'Occupied' : ''),
+                        subtitle: (curr.startNotes && curr.startNotes !== '—' ? curr.startNotes : (curr.startActionType === 'CHECK_IN' ? 'Occupied' : '')),
                         duration: curr.duration,
                         color: style.hex,
                         bgColor: style.bg,

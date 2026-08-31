@@ -287,7 +287,7 @@ function IncomeExpensesContent() {
         };
       }
       return null;
-    }).filter(Boolean) as typeof EXPENSE_GROUPS;
+    }).filter(Boolean) as (typeof EXPENSE_GROUPS[number])[];
   }, [searchTerm]);
 
   if (!activeResidences.length) {

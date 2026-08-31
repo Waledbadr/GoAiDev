@@ -19,7 +19,7 @@ import {
   CheckCircle2, Building2, Store, Home, Wrench, Droplets, Flame, Wifi, Users,
   FileText, DollarSign, Calendar, ShieldCheck, Plus, Trash2, Search, Sparkles,
   ChevronRight, ChevronLeft, Shield, Zap, Receipt, FileSpreadsheet, UserCheck,
-  Clock, RefreshCw, ChevronDown, ChevronUp, FilePlus, Layers, AlertTriangle, Info
+  Clock, RefreshCw, ChevronDown, ChevronUp, FilePlus, Layers, AlertTriangle, Info, X
 } from 'lucide-react';
 import { UnifiedDatePicker } from '@/components/ui/hijri-date-picker';
 import { getHijriFromGregorian, hijriToGregorianISO } from '@/lib/hijri-date-utils';

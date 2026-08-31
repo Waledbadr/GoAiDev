@@ -151,7 +151,7 @@ export default function ServiceOrdersListPage() {
                         ? format(
                             typeof (o.dateCreated as any).toDate === 'function'
                               ? (o.dateCreated as any).toDate()
-                              : new Date(o.dateCreated),
+                              : new Date(o.dateCreated as any),
                             "PPP"
                           )
                         : "—"}
@@ -231,7 +231,7 @@ export default function ServiceOrdersListPage() {
                               ? format(
                                   typeof (o.dateCreated as any).toDate === 'function'
                                     ? (o.dateCreated as any).toDate()
-                                    : new Date(o.dateCreated),
+                                    : new Date(o.dateCreated as any),
                                   "PPP"
                                 )
                               : "—"}

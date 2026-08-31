@@ -125,7 +125,7 @@ export default function MaintenancePage() {
                                     ? format(
                                         typeof (request.date as any).toDate === 'function'
                                             ? (request.date as any).toDate()
-                                            : new Date(request.date),
+                                            : new Date(request.date as any),
                                         'PPP'
                                       )
                                     : '-'}

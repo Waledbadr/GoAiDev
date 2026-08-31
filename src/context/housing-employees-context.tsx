@@ -19,10 +19,13 @@ import { useToast } from '@/hooks/use-toast';
 export interface HousingEmployee {
   id: string; // Document ID
   employeeId: string; // Internal ID or Badge ID
+  badgeId?: string;
   name: string;
   nameAr: string;
   profession: string;
   professionAr: string;
+  department?: string;
+  projectName?: string;
   dailyHours: number;
   monthlySalary: number;
   status: 'Active' | 'On Leave' | 'Transferred' | 'Inactive';

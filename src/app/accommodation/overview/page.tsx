@@ -5,9 +5,11 @@ import { useAccommodation } from '@/context/accommodation-context';
 import { useUsers } from '@/context/users-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Users, Building2, FileText, TrendingUp, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Users, Building2, FileText, TrendingUp, AlertTriangle, CheckCircle2, RefreshCw, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 import { ManualSyncButton } from '@/components/accommodation/manual-sync-button';
+import { LegacySyncDialog } from '@/components/accommodation/legacy-sync-dialog';
+import { HistorySyncDialog } from '@/components/accommodation/history-sync-dialog';
 import { Button } from '@/components/ui/button';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
@@ -300,7 +302,21 @@ const occupancyByResidence: Record<string, { occupied: number; capacity: number;
               {metrics.hasFullData ? 'بيانات كاملة' : 'قراءات سريعة'}
             </AlertDescription>
           </Alert>
+          <Link href="/accommodation/reports/monthly-billing">
+            <Button variant="outline" size="sm" className="gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
+              <CreditCard className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              فاتورة إشغال العمالة (In/Out)
+            </Button>
+          </Link>
+          <Link href="/accommodation/reports/residence-audit">
+            <Button variant="outline" size="sm" className="gap-1.5 border-indigo-500/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40">
+              <FileText className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              تقرير مطابقة السكن (Audit)
+            </Button>
+          </Link>
           <ManualSyncButton />
+          <LegacySyncDialog />
+          <HistorySyncDialog />
         </div>
       </div>
 

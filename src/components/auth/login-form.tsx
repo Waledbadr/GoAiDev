@@ -430,12 +430,10 @@ export default function LoginForm() {
         toast({ title: 'Passkey', description: 'Passkey verified.' });
         redirectAfterLogin();
       } else {
-        toast({ title: 'Passkey Sign In', description: 'Signed in via Passkey' });
-        await signInWithFallbackUser(targetEmail, 'Passkey User');
+        toast({ title: 'Passkey Sign In', description: 'Passkey verification failed.', variant: 'destructive' });
       }
     } catch (e: any) {
-      toast({ title: 'Passkey Sign In', description: 'Signed in via Passkey' });
-      await signInWithFallbackUser(targetEmail, 'Passkey User');
+      toast({ title: 'Passkey Sign In', description: e?.message || 'Passkey verification failed.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }

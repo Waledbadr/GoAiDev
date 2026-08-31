@@ -2,7 +2,7 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { List, TrendingUp, Wrench, Grid3X3, Home, Users, AlertTriangle, Building2, UserX, BarChart3, Clock, Activity } from "lucide-react";
+import { List, TrendingUp, Wrench, Grid3X3, Home, Users, AlertTriangle, Building2, UserX, BarChart3, Clock, Activity, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from '@/context/language-context';
 
@@ -58,10 +58,22 @@ export default function ReportsPage() {
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <ReportCard 
-            href="/accommodation/reports"
+            href="/accommodation/reports/monthly-billing"
+            icon={<CreditCard className="h-6 w-6 text-emerald-600" />}
+            title="فاتورة إشغال العمالة الشهرية (In/Out Billing)"
+            description="احتساب دقيق لعدد الأيام الفعلية لكل عامل في السكن بناءً على تواريخ الدخول والخروج مع المبالغ التقديرية وتصدير الفواتير."
+          />
+          <ReportCard 
+            href="/accommodation/reports/residence-audit"
             icon={<Building2 className="h-6 w-6 text-indigo-600" />}
-            title="Accommodation Reports Dashboard"
-            description="Access all accommodation reports including Vacancy, Nationality, and Overcrowding."
+            title="تقرير مطابقة ومراجعة السكن (Field Audit)"
+            description="تقرير تفصيلي لكل سكن بمبانيه وطوابقه وغرفه وعمالته الساكنة لمطابقة الواقع مع النظام مع خانات التدقيق والطباعة."
+          />
+          <ReportCard 
+            href="/accommodation/reports"
+            icon={<Home className="h-6 w-6 text-purple-600" />}
+            title="لوحة تقارير التسكين الشاملة"
+            description="إحصائيات الإشغال، توزيع الجنسيات، الغرف الشاغرة، والتسكين الزائد."
           />
         </div>
       </section>

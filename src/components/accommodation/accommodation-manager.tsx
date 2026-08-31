@@ -43,6 +43,7 @@ import {
 import { AddWorkerDialog } from "./add-worker-dialog";
 import { WorkerHistoryDialog } from "./worker-history-dialog";
 import { RoomHistoryDialog } from "./room-history-dialog";
+import { LegacySyncDialog } from "./legacy-sync-dialog";
 
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -849,6 +850,7 @@ export function AccommodationManager() {
           <p className="text-muted-foreground">Manage room assignments and capacity.</p>
         </div>
         <div className="flex items-center gap-2">
+          <LegacySyncDialog />
           <Button variant="outline" onClick={handleSync} disabled={isSyncing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
             Sync
@@ -892,7 +894,7 @@ export function AccommodationManager() {
                         w.idNumber === searchQuery.trim()
                       );
 
-                      let toSelect = [];
+                      let toSelect: any[] = [];
                       if (exactMatch) {
                         // If exact match found, ONLY select that one (unless already selected)
                         if (!selectedWorkerIds.includes(exactMatch.id)) {

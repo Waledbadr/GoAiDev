@@ -13,6 +13,7 @@ import { enablePushIfGranted } from '@/lib/messaging';
 import { LanguageProvider, useLanguage } from '@/context/language-context';
 
 const FeedbackWidget = dynamic(() => import('@/components/feedback/feedback-widget'), { ssr: false });
+const AICopilotDrawer = dynamic(() => import('@/components/ai/ai-copilot-drawer').then((m) => m.AICopilotDrawer), { ssr: false });
 
 function AppLayoutInner({ children }: PropsWithChildren) {
   const { currentUser } = useUsers();
@@ -51,6 +52,7 @@ function AppLayoutInner({ children }: PropsWithChildren) {
             {children}
           </main>
         </SidebarInset>
+        <AICopilotDrawer />
       </SidebarProvider>
     </RequireAuth>
   );
