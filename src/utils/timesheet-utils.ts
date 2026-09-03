@@ -18,20 +18,37 @@ export const calculateAttendanceStats = (
   transfers: any[] = [], // include transfers
   allEmployees: any[] = [] // added allEmployees
 ): { totalHours: number; regularHours: number; overtimeHours: number; status: DailyAttendance['status'] } => {
-  // 0. Check for transfers (Move In / Move Out)
+  // 0. Check for transfers (Move In / Move Out / ID Changes)
+  const emp = allEmployees.find(e => String(e.id) === String(employeeId) || String(e.employeeId) === String(employeeId) || String(e.badgeId) === String(employeeId));
+  
   if (transfers && transfers.length > 0) {
-    const sortedTransfers = [...transfers].sort((a, b) => b.date.localeCompare(a.date));
+    const sortedTransfers = [...transfers].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     
-    // Find last move-in and last move-out
-    const lastMoveIn = sortedTransfers.find(t => t.type === 'Move In');
-    const lastMoveOut = sortedTransfers.find(t => t.type === 'Move Out');
+    // Find last move-in and last move-out matching various representations
+    const lastMoveIn = sortedTransfers.find(t => {
+      const tType = String(t?.type || '').toLowerCase().trim();
+      return tType === 'move in' || tType === 'move-in' || tType === 'join' || tType.includes('دخول') || tType.includes('انضمام') || tType.includes('رقم جديد');
+    });
 
-    if (lastMoveIn && date < lastMoveIn.date) {
+    const lastMoveOut = sortedTransfers.find(t => {
+      const tType = String(t?.type || '').toLowerCase().trim();
+      return tType === 'move out' || tType === 'move-out' || tType === 'final exit' || tType === 'exit' || tType === 'transfer' || tType === 'transferred' || tType.includes('خروج') || tType.includes('نقل') || tType.includes('تحويل') || tType.includes('تغيير');
+    });
+
+    if (lastMoveIn && lastMoveIn.date && date < lastMoveIn.date) {
       return { totalHours: 0, regularHours: 0, overtimeHours: 0, status: 'Transferred' };
     }
-    if (lastMoveOut && date > lastMoveOut.date) {
+    if (lastMoveOut && lastMoveOut.date && date >= lastMoveOut.date) {
       return { totalHours: 0, regularHours: 0, overtimeHours: 0, status: 'Transferred' };
     }
+  }
+
+  // Fallback to employee profile fields
+  if (emp?.transferDate && date >= emp.transferDate) {
+    return { totalHours: 0, regularHours: 0, overtimeHours: 0, status: 'Transferred' };
+  }
+  if (emp?.moveInDate && date < emp.moveInDate) {
+    return { totalHours: 0, regularHours: 0, overtimeHours: 0, status: 'Transferred' };
   }
 
   // 1. Check if the employee is on an approved leave
@@ -366,7 +383,7 @@ export const processPunches = (
 
     const { employeeId, date } = sorted[0];
     const empTransfers = transfers.filter(t => t.employeeId === employeeId || t.badgeId === employeeId);
-    const stats = calculateAttendanceStats(checkIn, checkOut, date, employeeId, events, schedules, effectiveLeaves, empTransfers);
+    const stats = calculateAttendanceStats(checkIn, checkOut, date, employeeId, events, schedules, effectiveLeaves, empTransfers, allEmployees);
 
     const checkInDevice = checkInDeviceRecord.deviceName || "Unknown";
     const mappedProjectName = deviceToProjectMap[checkInDevice] || getProjectFromDevice(checkInDevice);
@@ -407,11 +424,23 @@ export const processPunches = (
              if (!empId) return;
              
              // Transfer Filtering Logic: Skip if fully moved out before this month AND no punches
-             const empTransfers = transfers.filter(t => t.employeeId === emp.id || t.badgeId === emp.employeeId);
-             const lastMoveOut = [...empTransfers].filter(t => t.type === 'Move Out').sort((a, b) => b.date.localeCompare(a.date))[0];
-             const lastMoveIn = [...empTransfers].filter(t => t.type === 'Move In').sort((a, b) => b.date.localeCompare(a.date))[0];
+             const empTransfers = transfers.filter(t => 
+               t.employeeId === emp.id || 
+               t.badgeId === emp.employeeId || 
+               t.badgeId === emp.badgeId || 
+               t.employeeId === emp.employeeId
+             );
+             const lastMoveOut = [...empTransfers].filter(t => {
+               const tType = String(t?.type || '').toLowerCase().trim();
+               return tType === 'move out' || tType === 'move-out' || tType === 'final exit' || tType === 'exit' || tType === 'transfer' || tType === 'transferred' || tType.includes('خروج') || tType.includes('نقل') || tType.includes('تحويل');
+             }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
 
-             if (lastMoveOut && lastMoveOut.date < startDateStr! && (!lastMoveIn || lastMoveIn.date < lastMoveOut.date)) {
+             const lastMoveIn = [...empTransfers].filter(t => {
+               const tType = String(t?.type || '').toLowerCase().trim();
+               return tType === 'move in' || tType === 'move-in' || tType === 'join' || tType.includes('دخول') || tType.includes('انضمام') || tType.includes('رقم جديد');
+             }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+
+             if (lastMoveOut && lastMoveOut.date && lastMoveOut.date < startDateStr! && (!lastMoveIn || !lastMoveIn.date || lastMoveIn.date < lastMoveOut.date)) {
                 // If they moved out before this range started, and haven't moved back in since, skip
                 return;
              }
@@ -420,7 +449,7 @@ export const processPunches = (
                  const key = `${empId}_${dateStr}`;
                  if (!parsed.find(p => p.id === key)) {
                      // No punch logic -> completely empty day!
-                     const stats = calculateAttendanceStats(null, null, dateStr, empId, events, schedules, effectiveLeaves, empTransfers);
+                     const stats = calculateAttendanceStats(null, null, dateStr, empId, events, schedules, effectiveLeaves, empTransfers, allEmployees);
                      
                      // If it's a completely normal day (Absent) and they didn't work, we insert it.
                      // This fulfills the "generate full dummy records" requirement explicitly.

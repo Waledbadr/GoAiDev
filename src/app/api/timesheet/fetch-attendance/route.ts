@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 60; // Increase serverless timeout for biometric connection
+export const maxDuration = 120; // Increase serverless timeout for biometric connection
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,9 +26,9 @@ export async function GET(req: NextRequest) {
     // The API uses Basic Auth
     const authHeader = `Basic ${Buffer.from("Housing:A1111111").toString("base64")}`;
 
-    // 60-second timeout to handle large date ranges from the biometric server
+    // 120-second timeout to handle biometric server generation
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
 
     let response: Response;
     try {
@@ -40,13 +40,21 @@ export async function GET(req: NextRequest) {
       });
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
-      const isTimeout = fetchError.name === 'AbortError';
-      const isNetworkError = fetchError.cause?.code === 'ECONNREFUSED' || fetchError.cause?.code === 'ECONNRESET';
+      const isTimeout =
+        fetchError.name === 'AbortError' ||
+        fetchError.name === 'TimeoutError' ||
+        fetchError.cause?.name === 'AbortError' ||
+        fetchError.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+        fetchError.cause?.code === 'ETIMEDOUT';
+      const isNetworkError =
+        fetchError.cause?.code === 'ECONNREFUSED' ||
+        fetchError.cause?.code === 'ECONNRESET' ||
+        fetchError.cause?.code === 'EHOSTUNREACH';
       const msg = isTimeout
-        ? 'انتهت مهلة الاتصال بخادم البصمة (60 ثانية). تحقق من الشبكة.'
+        ? 'انتهت مهلة الاتصال بخادم البصمة (120 ثانية). يرجى تقليل نطاق التاريخ أو المحاولة لاحقاً.'
         : isNetworkError
         ? `فشل الاتصال بخادم البصمة (${fetchError.cause?.code}). تأكد أن الخادم 213.210.196.115:8585 يعمل ومتاح.`
-        : `خطأ في الشبكة: ${fetchError.message}`;
+        : `خطأ في الاتصال بخادم البصمة: ${fetchError.cause?.message || fetchError.message}`;
       return NextResponse.json({ error: msg, code: fetchError.cause?.code || fetchError.name }, { status: 503 });
     }
     clearTimeout(timeoutId);

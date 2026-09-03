@@ -158,7 +158,14 @@ export function HousingEmployeesProvider({ children }: { children: ReactNode }) 
 export function useHousingEmployees() {
   const context = useContext(HousingEmployeesContext);
   if (context === undefined) {
-    throw new Error('useHousingEmployees must be used within a HousingEmployeesProvider');
+    console.warn('[useHousingEmployees] Component rendered outside HousingEmployeesProvider. Using safe fallback state.');
+    return {
+      employees: [] as HousingEmployee[],
+      loading: false,
+      addEmployee: async () => '',
+      updateEmployee: async () => {},
+      refreshEmployees: async () => {},
+    };
   }
   return context;
 }

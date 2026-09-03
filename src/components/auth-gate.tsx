@@ -12,7 +12,7 @@ export function AuthGate({ children }: Props) {
 
   useEffect(() => {
     let mounted = true;
-    const p = auth ? authReady : Promise.resolve();
+    const p = auth ? auth.authStateReady() : Promise.resolve();
     p.catch(() => {}).finally(() => {
       if (mounted) setReady(true);
     });

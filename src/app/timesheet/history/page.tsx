@@ -20,6 +20,7 @@ import { TimesheetProvider, useTimesheet } from '@/context/timesheet-context';
 import { getFiscalMonthPeriod, getFiscalMonthForDate } from '@/lib/fiscal-month-utils';
 import { HousingEmployee, HousingEmployeesProvider } from '@/context/housing-employees-context';
 import { EmployeeProfileSheet } from '@/components/timesheet/employees/employee-profile-sheet';
+import { getProjectFromDevice } from '@/constants/timesheet-devices';
 
 // Custom profession ordering for Monthly Archive (Arabic labels)
 const PROFESSION_ORDER: Record<string, number> = {
@@ -195,7 +196,7 @@ function TimesheetHistoryContent() {
   const isAr = locale === 'ar';
   const { currentUser } = useUsers();
   const { residences, loadResidences } = useResidences();
-  const { projectToResidenceMap, timesheetEvents, employeeSchedules } = useTimesheet();
+  const { projectToResidenceMap, timesheetEvents, employeeSchedules, deviceToProjectMap } = useTimesheet();
   const [records, setRecords] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
   const [exceptions, setExceptions] = useState<any[]>([]);
@@ -402,7 +403,10 @@ function TimesheetHistoryContent() {
       
       empRawGroup[empKey].allRecords.push(record);
       
-      const proj = record.projectName || 'Unassigned / Outside';
+      const rawDevice = record.checkInDevice || record.deviceName;
+      const isRealDevice = rawDevice && rawDevice !== 'System Generated' && rawDevice !== 'Unknown' && rawDevice !== 'غير معروف';
+      const mappedProj = isRealDevice ? (deviceToProjectMap?.[rawDevice] || getProjectFromDevice(rawDevice)) : null;
+      const proj = mappedProj || record.projectName || 'Unassigned / Outside';
       empRawGroup[empKey].residenceCounts[proj] = (empRawGroup[empKey].residenceCounts[proj] || 0) + 1;
     });
 
@@ -489,8 +493,11 @@ function TimesheetHistoryContent() {
             };
           }
 
-          const recProj = sanitizedRecord.projectName || 'Unassigned / Outside';
-          const isElsewhereRec = recProj !== proj;
+          const rawDevice = sanitizedRecord.checkInDevice || sanitizedRecord.deviceName;
+          const isRealDevice = rawDevice && rawDevice !== 'System Generated' && rawDevice !== 'Unknown' && rawDevice !== 'غير معروف';
+          const mappedProj = isRealDevice ? (deviceToProjectMap?.[rawDevice] || getProjectFromDevice(rawDevice)) : null;
+          const recProj = mappedProj || sanitizedRecord.projectName || 'Unassigned / Outside';
+          const isElsewhereRec = hasActualPunches && recProj !== proj;
           const prevRecord = grouped[proj][empKey].daily[dateStr];
 
           if (isElsewhereRec) {
@@ -517,11 +524,13 @@ function TimesheetHistoryContent() {
              }
           }
 
-          // Track project participation for indicators
-          if (!employeeDailyProjects[empKey]) employeeDailyProjects[empKey] = {};
-          if (!employeeDailyProjects[empKey][dateStr]) employeeDailyProjects[empKey][dateStr] = [];
-          if (!employeeDailyProjects[empKey][dateStr].includes(recProj)) {
-             employeeDailyProjects[empKey][dateStr].push(recProj);
+          // Track project participation for indicators (ONLY for actual punches)
+          if (hasActualPunches) {
+            if (!employeeDailyProjects[empKey]) employeeDailyProjects[empKey] = {};
+            if (!employeeDailyProjects[empKey][dateStr]) employeeDailyProjects[empKey][dateStr] = [];
+            if (!employeeDailyProjects[empKey][dateStr].includes(recProj)) {
+               employeeDailyProjects[empKey][dateStr].push(recProj);
+            }
           }
         });
       });
@@ -673,23 +682,43 @@ function TimesheetHistoryContent() {
       Object.keys(grouped[proj]).forEach(empKey => {
         const empData = grouped[proj][empKey];
 
-        // Helper to find the 'Winner' project for the 8-hour allowance on a specific day
-        const getAllowanceWinner = (date: string) => {
-            const allProjs = employeeDailyProjects[empKey]?.[date] || [];
-            if (allProjs.length <= 1) return allProjs[0] || proj;
-            
-            // Try to find projects where they actually worked (has hours or 'Present')
-            const workedProjs = allProjs.filter((p: string) => {
-                const r = grouped[p]?.[empKey]?.daily[date];
-                return r && (r.totalHours > 0 || r.regularHours > 0 || r.status === 'Present' || (r.punches && r.punches.length > 0));
-            });
-
-            if (workedProjs.length > 0) {
-                // Return the last one they worked in (most likely where they finished their day)
-                return workedProjs[workedProjs.length - 1];
+        // Helper to find the SINGLE 'Winner' project for the 8-hour allowance on a specific day
+        const getAllowanceWinner = (date: string, prevDate?: string) => {
+            // 1. If employee actually worked on this day, winner is where they worked
+            const actualProjs = employeeDailyProjects[empKey]?.[date] || [];
+            if (actualProjs.length > 0) {
+                const workedProjs = actualProjs.filter((p: string) => {
+                    const r = grouped[p]?.[empKey]?.daily[date];
+                    return r && (r.totalHours > 0 || r.regularHours > 0 || r.status === 'Present' || (r.punches && r.punches.length > 0));
+                });
+                if (workedProjs.length > 0) {
+                    return workedProjs[workedProjs.length - 1];
+                }
+                return actualProjs[0];
             }
-            // If no work anywhere, fallback to first in list
-            return allProjs[0] || proj;
+
+            // 2. If no work on this day (e.g. Friday rest day), check where they worked on previous day (Thursday)
+            if (prevDate) {
+                const allGroupedProjs = Object.keys(grouped).filter(p => !!grouped[p]?.[empKey]);
+                const thursWorkedProj = allGroupedProjs.find(p => {
+                    const r = grouped[p]?.[empKey]?.daily[prevDate];
+                    return r && (r.status === 'Present' || (r.punches && r.punches.length > 0) || (r.totalHours || 0) > 0 || (r.regularHours || 0) > 0);
+                });
+                if (thursWorkedProj) {
+                    return thursWorkedProj;
+                }
+            }
+
+            // 3. Fallback to employee's primary residence
+            const primary = empRawGroup[empKey]?.primaryRes || employeesMap[empKey]?.projectName || employeesMap[empKey]?.project;
+            if (primary && grouped[primary]?.[empKey]) {
+                return primary;
+            }
+
+            // 4. Default to deterministic first project
+            const allEmpProjs = Object.keys(grouped).filter(p => !!grouped[p]?.[empKey]);
+            allEmpProjs.sort();
+            return allEmpProjs[0] || proj;
         };
 
         // 1. Process Fridays based on Thursday presence
@@ -701,20 +730,54 @@ function TimesheetHistoryContent() {
             let workedThursday = false;
             
             if (prevDateStr) {
-              const thursRecord = empData.daily[prevDateStr];
-              if (thursRecord && (thursRecord.status === 'Present' || (thursRecord.punches && thursRecord.punches.length > 0) || thursRecord.totalHours > 0 || thursRecord.regularHours > 0)) {
-                workedThursday = true;
-              }
+              // Check if worked Thursday in ANY project
+              const allEmpProjs = Object.keys(grouped).filter(p => !!grouped[p]?.[empKey]);
+              workedThursday = allEmpProjs.some(p => {
+                const thursRecord = grouped[p]?.[empKey]?.daily[prevDateStr];
+                return thursRecord && (
+                  thursRecord.status === 'Present' ||
+                  thursRecord.status === 'Leave' ||
+                  thursRecord.status === 'Exception' ||
+                  (thursRecord.punches && thursRecord.punches.length > 0) ||
+                  (thursRecord.totalHours || 0) > 0 ||
+                  (thursRecord.regularHours || 0) > 0
+                );
+              });
+            } else if (idx === 0) {
+              // Friday is day 21 (first day of cycle)
+              // Only eligible if employee was active/worked in the immediate next days of the first week (days 22 to 27)
+              const allEmpProjs = Object.keys(grouped).filter(p => !!grouped[p]?.[empKey]);
+              const workedInFirstWeek = allEmpProjs.some(p => {
+                return daysArray.slice(1, 7).some(d => {
+                  const r = grouped[p]?.[empKey]?.daily[d];
+                  return r && (
+                    r.status === 'Present' ||
+                    r.status === 'Leave' ||
+                    r.status === 'Exception' ||
+                    (r.punches && r.punches.length > 0) ||
+                    (r.totalHours || 0) > 0 ||
+                    (r.regularHours || 0) > 0
+                  );
+                });
+              });
+              workedThursday = workedInFirstWeek;
             }
 
             if (workedThursday) {
-              const allowanceWinner = getAllowanceWinner(dateStr);
-              if (proj !== allowanceWinner) return; // Only the winner gets the Friday rest allowance
+              const allowanceWinner = getAllowanceWinner(dateStr, prevDateStr);
+              if (proj !== allowanceWinner) {
+                // Non-winner project: ensure Friday rest allowance is not awarded here
+                const existing = empData.daily[dateStr];
+                if (existing && (existing.isVirtualWeekend || (existing.status === 'Weekend' && !existing.punches?.length && !existing.checkIn))) {
+                  delete empData.daily[dateStr];
+                }
+                return;
+              }
 
               const fridayRecord = empData.daily[dateStr];
               
-              if (!fridayRecord) {
-                // They didn't work Friday, but get 8 hrs rest allowance
+              if (!fridayRecord || fridayRecord.status === 'Elsewhere' || fridayRecord.status === 'Absent' || (!fridayRecord.punches?.length && !fridayRecord.checkIn && (fridayRecord.totalHours || 0) === 0)) {
+                // They didn't work Friday, but get 8 hrs rest allowance in the winner project
                 empData.daily[dateStr] = {
                   status: 'Weekend',
                   isVirtualWeekend: true,
@@ -753,6 +816,7 @@ function TimesheetHistoryContent() {
                 fridayRecord.overtimeHours = actualWorked;
                 fridayRecord.totalHours = Number((8 + actualWorked).toFixed(2));
                 fridayRecord.isVirtualWeekend = true;
+                fridayRecord.status = 'Weekend';
               }
             }
           }
@@ -859,7 +923,7 @@ function TimesheetHistoryContent() {
         // 3. Transfer marker 'T': mark days on or after employee's transfer/out date
         const empRecord = employeesMap[empKey];
 
-        // Find move-out / transfer records for this employee
+        // Find move-out / move-in / transfer records for this employee
         const empTransfers = transfers.filter(t => {
           const k = getEmployeeKeyFromAny(t);
           const bId = String(t.badgeId || t.employeeId || '').trim();
@@ -868,9 +932,10 @@ function TimesheetHistoryContent() {
           return k === empKey || bId === empKey || (docId && (t.employeeId === docId || t.badgeId === docId)) || (empBId && (t.employeeId === empBId || t.badgeId === empBId));
         });
 
+        // 1. Move Out / Exit (Days ON or AFTER transfer date -> marked 'T')
         const moveOutTransfers = empTransfers.filter(t => {
           const tType = String(t?.type || '').toLowerCase().trim();
-          return tType === 'move out' || tType === 'move-out' || tType === 'final exit' || tType === 'exit' || tType === 'transfer' || tType === 'transferred' || tType.includes('خروج') || tType.includes('نقل') || tType.includes('تحويل');
+          return tType === 'move out' || tType === 'move-out' || tType === 'final exit' || tType === 'exit' || tType === 'transfer' || tType === 'transferred' || tType.includes('خروج') || tType.includes('نقل') || tType.includes('تحويل') || tType.includes('تغيير رقم');
         });
 
         const moveOutDates = moveOutTransfers
@@ -908,8 +973,40 @@ function TimesheetHistoryContent() {
           });
         }
 
+        // 2. Move In / Join / New ID Start (Days strictly BEFORE transfer-in date -> marked 'T')
+        const moveInTransfers = empTransfers.filter(t => {
+          const tType = String(t?.type || '').toLowerCase().trim();
+          return tType === 'move in' || tType === 'move-in' || tType === 'join' || tType.includes('دخول') || tType.includes('انضمام') || tType.includes('رقم جديد') || tType.includes('تسكين');
+        });
 
-        // 2. Accumulate Totals across all processed days
+        const moveInDates = moveInTransfers
+          .map(t => String(t.date || t.transferDate || t.startDate || ''))
+          .filter(d => d && d.includes('-'));
+
+        let moveInDate: string | undefined = undefined;
+        if (moveInDates.length > 0) {
+          moveInDates.sort((a, b) => a.localeCompare(b));
+          moveInDate = moveInDates[0];
+        } else if (empRecord?.moveInDate) {
+          moveInDate = String(empRecord.moveInDate);
+        } else if (empRecord?.startDate && daysArray.length > 0 && empRecord.startDate > daysArray[0]) {
+          moveInDate = String(empRecord.startDate);
+        }
+
+        if (moveInDate) {
+          daysArray.forEach((dateStr) => {
+            // Days BEFORE the move-in / start date
+            if (dateStr < moveInDate!) {
+              const existing = empData.daily[dateStr];
+              // If no punch or marked as Absent, mark as Transferred ('T')
+              if (!existing || existing.status === 'Absent' || (existing.status !== 'Leave' && existing.status !== 'Exception' && existing.status !== 'Present' && (!existing.punches || existing.punches.length === 0) && (existing.totalHours || 0) === 0 && (existing.regularHours || 0) === 0)) {
+                empData.daily[dateStr] = { status: 'Transferred', date: dateStr, isTransfer: true };
+              }
+            }
+          });
+        }
+
+        // 3. Accumulate Totals across all processed days
         Object.values(empData.daily).forEach((record: any) => {
           if (record.isTransfer || record.status === 'Future' || record.status === 'Elsewhere') return; // Don't count transferred, future or elsewhere days
           empData.totalRH += (record.regularHours !== undefined ? record.regularHours : (record.totalHours || 0));
@@ -942,7 +1039,7 @@ function TimesheetHistoryContent() {
     });
 
     return grouped;
-  }, [records, leaves, exceptions, transfers, filterMonth, deferredSearchTerm, currentUser, residences, employeesMap, projectToResidenceMap, daysArray, timesheetEvents, employeeSchedules]);
+  }, [records, leaves, exceptions, transfers, filterMonth, deferredSearchTerm, currentUser, residences, employeesMap, projectToResidenceMap, deviceToProjectMap, daysArray, timesheetEvents, employeeSchedules]);
 
   const handleExportMonthlySheet = () => {
     const rows: Array<(string | number)[]> = [];

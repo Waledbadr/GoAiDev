@@ -131,8 +131,8 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
     setProcessedAttendance([]);
 
     try {
-      // 1. Split into chunks to avoid Biometric Server timeouts (7 days per request)
-      const chunks = getDateChunks(startDate, endDate, 7);
+      // 1. Split into smaller chunks (3 days) so the biometric server responds in <10s without timing out
+      const chunks = getDateChunks(startDate, endDate, 3);
       let allPunches: RawPunch[] = [];
       
       // 2. Fetch ancillary data (leaves, transfers, all employees) once for the entire period
@@ -154,16 +154,34 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
         console.warn("Failed to fetch leaves/transfers/employees for processing", e);
       }
 
-      // 3. Serial fetching of chunks to keep biometric server load manageable
+      // 3. Serial fetching of 3-day chunks with retry mechanism
       for (const chunk of chunks) {
-        const res = await fetch(`/api/timesheet/fetch-attendance?start_date=${chunk.start}&end_date=${chunk.end}`);
-        if (!res.ok) {
-          let errorMsg = res.statusText;
+        let res: Response | null = null;
+        let lastErrorMsg = '';
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
           try {
-            const errBody = await res.json();
-            errorMsg = errBody.error || errBody.message || errorMsg;
-          } catch {}
-          throw new Error(errorMsg);
+            res = await fetch(`/api/timesheet/fetch-attendance?start_date=${chunk.start}&end_date=${chunk.end}`);
+            if (res.ok) break;
+
+            try {
+              const errBody = await res.json();
+              lastErrorMsg = errBody.error || errBody.message || res.statusText;
+            } catch {
+              lastErrorMsg = res.statusText;
+            }
+          } catch (netErr: any) {
+            lastErrorMsg = netErr.message || 'فشل الاتصال بالخادم';
+          }
+
+          if (attempt < 2) {
+            // Wait 1.5s before retrying
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+        }
+
+        if (!res || !res.ok) {
+          throw new Error(lastErrorMsg || 'فشل الاتصال بخادم البصمة');
         }
         
         const json = await res.json();
@@ -234,8 +252,45 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
         lastSourceSyncAt: syncedAt,
       }));
 
+      // Smart non-destructive merge:
+      // Fetch existing records from D1 to protect completed punches from being overwritten by empty/dummy records
+      let existingMap = new Map<string, any>();
+      try {
+        const existingDocs = await d1Client.getDocs('attendanceRecords');
+        (existingDocs || []).forEach(doc => {
+          if (doc && doc.id) {
+            existingMap.set(String(doc.id), doc);
+          }
+        });
+      } catch (e) {
+        console.warn("Could not fetch existing attendance for merge comparison, proceeding with direct save", e);
+      }
+
+      const mergedRecordsToSave = recordsToSave.map(newRec => {
+        const existing = existingMap.get(String(newRec.id));
+        if (!existing) return newRec;
+
+        const newHasPunches = (newRec.punches && newRec.punches.length > 0) || (newRec.checkIn && newRec.checkOut) || (newRec.totalHours || 0) > 0 || newRec.status === 'Present';
+        const existingHasPunches = (existing.punches && existing.punches.length > 0) || (existing.checkIn && existing.checkOut) || (existing.totalHours || 0) > 0 || existing.status === 'Present';
+
+        // 1. If new record is empty/dummy (e.g. employee disappeared from source device after transfer)
+        // but existing DB record already has complete/real punches -> PRESERVE existing complete data!
+        if (!newHasPunches && existingHasPunches) {
+          return existing;
+        }
+
+        // 2. If both have punches, but existing was complete (2+ punches / higher hours) and new has fewer -> keep existing complete record
+        const newPunchCount = (newRec.punches?.length || 0) + (newRec.checkIn ? 1 : 0) + (newRec.checkOut ? 1 : 0);
+        const existingPunchCount = (existing.punches?.length || 0) + (existing.checkIn ? 1 : 0) + (existing.checkOut ? 1 : 0);
+        if (existingPunchCount > newPunchCount && (existing.totalHours || 0) >= (newRec.totalHours || 0)) {
+          return existing;
+        }
+
+        return newRec;
+      });
+
       // High-speed batch save to Cloudflare D1
-      const savedCount = await d1Client.setDocsBatch('attendanceRecords', recordsToSave);
+      const savedCount = await d1Client.setDocsBatch('attendanceRecords', mergedRecordsToSave);
 
       // Clear in-memory data to signal that the save was successful
       setRawPunches([]);

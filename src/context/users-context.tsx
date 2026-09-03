@@ -136,11 +136,18 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
 
   // Track Firebase Auth state to prefer the signed-in UID and trigger loading
   useEffect(() => {
-    if (!auth) return; // local mode
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const _auth = auth;
+    if (!_auth) return; // local mode
+    let isMounted = true;
+    const unsub = onAuthStateChanged(_auth, async (u) => {
       lastAuthUidRef.current = u?.uid || null;
       if (!u) {
-        // Signed out
+        // Wait for authStateReady to ensure this isn't a cross-tab transient state
+        await _auth.authStateReady();
+        if (!isMounted) return;
+        if (_auth.currentUser) return; // Still signed in, false alarm
+
+        // Genuinely signed out
         if (unsubscribeRef.current) {
           try { unsubscribeRef.current(); } catch {}
           unsubscribeRef.current = null;
@@ -150,11 +157,15 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
         setCurrentUser(null);
         try { localStorage.removeItem('currentUser'); } catch {}
       } else {
+        if (!isMounted) return;
         isLoaded.current = false;
         loadUsers();
       }
     });
-    return () => unsub();
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [loadUsers]);
 
   // Initialize users list depending on environment/auth

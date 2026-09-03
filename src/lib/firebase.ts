@@ -43,8 +43,8 @@ if (isFirebaseConfigured) {
   try {
     app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-    // Quieter console: only errors
-    setLogLevel('error');
+    // Set log level to silent to suppress internal multi-tab lease arbitration notices
+    setLogLevel('silent');
 
     // Initialize App Check if configured (helps when enforcement is enabled)
     if (typeof window !== 'undefined') {
@@ -132,18 +132,10 @@ if (isFirebaseConfigured) {
     auth = getAuth(app);
 
     if (typeof window !== 'undefined') {
-      // Persist auth locally so tabs share state
-      setPersistence(auth, browserLocalPersistence).catch(() => {});
-
       // Prefer device language for OAuth & email templates
       try { auth.useDeviceLanguage(); } catch {}
 
-      authReady = new Promise<void>((resolve) => {
-        const unsub = onAuthStateChanged(auth!, () => {
-          unsub();
-          resolve();
-        });
-      });
+      authReady = auth.authStateReady();
     }
 
     if (process.env.NODE_ENV !== 'production') {

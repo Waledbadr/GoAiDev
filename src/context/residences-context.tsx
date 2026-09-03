@@ -220,11 +220,18 @@ export const ResidencesProvider = ({ children }: { children: ReactNode }) => {
     loadResidences();
     // Also subscribe to auth changes to trigger loading after sign-in
     let unsubAuth: (() => void) | undefined;
-    if (auth) {
-      unsubAuth = onAuthStateChanged(auth, (u) => {
+    let isMounted = true;
+    const _auth = auth;
+    if (_auth) {
+      unsubAuth = onAuthStateChanged(_auth, async (u) => {
         if (u) {
           if (!isLoaded.current) loadResidences();
         } else {
+          // Wait for authStateReady to ensure this isn't a cross-tab transient state
+          await _auth.authStateReady();
+          if (!isMounted) return;
+          if (_auth.currentUser) return; // Still signed in
+
           // Signed out: clean up listeners and state
           if (unsubscribeRef.current) {
             try { unsubscribeRef.current(); } catch {}
@@ -237,6 +244,7 @@ export const ResidencesProvider = ({ children }: { children: ReactNode }) => {
       });
     }
     return () => {
+      isMounted = false;
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         isLoaded.current = false;

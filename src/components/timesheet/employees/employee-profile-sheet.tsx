@@ -199,7 +199,7 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
   // Submit Transfer
   const submitTransfer = async () => {
     if (!employee || !transferData.date) {
-      toast({ title: 'Required', description: 'Please fill transfer date', variant: 'destructive' });
+      toast({ title: 'Required', description: 'Please fill transfer date / يرجى تحديد تاريخ التحويل', variant: 'destructive' });
       return;
     }
     try {
@@ -216,16 +216,18 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
       });
       
       // Update employee location status
+      const isOut = transferData.type === 'Move Out' || transferData.type === 'Change ID';
       await updateEmployee(employee.id, { 
-        residenceStatus: transferData.type === 'Move In' ? 'Inside' : 'Outside',
+        residenceStatus: isOut ? 'Outside' : 'Inside',
         residenceLocation: transferData.location || employee.residenceLocation || '',
-        status: transferData.type === 'Move Out' ? 'Transferred' : 'Active'
-      });
+        status: isOut ? 'Transferred' : 'Active',
+        ...(isOut ? { transferDate: transferData.date } : { moveInDate: transferData.date })
+      } as any);
       
       setShowTransferForm(false);
       setTransferData({ type: 'Move In', date: '', location: '', reason: '' });
       await loadSubData();
-      toast({ title: 'Success', description: 'Transfer recorded' });
+      toast({ title: 'Success', description: 'Transfer recorded successfully / تم تسجيل حركة التحويل بنجاح' });
     } catch(err) {
       console.error(err);
       toast({ title: 'Error', description: 'Could not save transfer', variant: 'destructive' });
@@ -439,15 +441,15 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
               </div>
             )}
           </TabsContent>
-          
+
           <TabsContent value="transfers" className="mt-4">
             <div className="rounded-md border p-4 bg-gray-50 dark:bg-gray-900 mb-4 flex justify-between items-center">
               <div>
-                <p className="text-sm font-medium">Transfer Employee / تحويلات الموظف</p>
-                <p className="text-xs text-gray-500">Move in/out of camp permanently or temporarily</p>
+                <p className="text-sm font-medium">Transfer Employee / تحويلات الموظف وتغيير الأرقام</p>
+                <p className="text-xs text-gray-500">سجل حركات النقل الداخلي/الخارجي وتغيير الأرقام الوظيفية (لتمثيل علامة T في الأرشيف)</p>
               </div>
               <Button size="sm" variant="outline" className="text-blue-600" onClick={() => setShowTransferForm(!showTransferForm)}>
-                {showTransferForm ? 'Cancel' : 'New Transfer'}
+                {showTransferForm ? 'Cancel' : '+ New Transfer / تسجيل حركة تحويل'}
               </Button>
             </div>
 
@@ -455,35 +457,39 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
               <div className="bg-white dark:bg-gray-950 border p-4 rounded-md mb-4 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Direction</Label>
+                    <Label>نوع الحركة / Transfer Type</Label>
                     <Select value={transferData.type} onValueChange={(val) => setTransferData(prev => ({ ...prev, type: val }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Move In">Move In (داخل السكن)</SelectItem>
-                        <SelectItem value="Move Out">Move Out (خارج السكن/نقل)</SelectItem>
+                        <SelectItem value="Move Out">Move Out / نقل وخروج (T للأيام التالية للرقم القديم)</SelectItem>
+                        <SelectItem value="Move In">Move In / انضمام ورقم جديد (T للأيام السابقة للرقم الجديد)</SelectItem>
+                        <SelectItem value="Change ID">Change Employee ID / تغيير رقم وظيفي</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Date</Label>
+                    <Label>تاريخ الحركة / Transfer Date</Label>
                     <Input type="date" value={transferData.date} onChange={(e) => setTransferData(p => ({ ...p, date: e.target.value }))} />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Target Location / Project</Label>
-                    <Input value={transferData.location} onChange={(e) => setTransferData(p => ({ ...p, location: e.target.value }))} placeholder="E.g., King Aziz Hospital Camp" />
+                    <Label>الموقع أو السكن أو الرقم المرتبط / Target Location / Project / Related Badge</Label>
+                    <Input value={transferData.location} onChange={(e) => setTransferData(p => ({ ...p, location: e.target.value }))} placeholder="مثال: تم التغيير من الرقم 35440 إلى 51500 أو اسم السكن الجديد" />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Notes / Reason</Label>
-                    <Input value={transferData.reason} onChange={(e) => setTransferData(p => ({ ...p, reason: e.target.value }))} />
+                    <Label>ملاحظات أو سبب التحويل / Notes & Reason</Label>
+                    <Input value={transferData.reason} onChange={(e) => setTransferData(p => ({ ...p, reason: e.target.value }))} placeholder="مثال: إصدار إقامة جديدة / تغيير الرقم الوظيفي المعتمد" />
                   </div>
                 </div>
-                <Button className="w-full" onClick={submitTransfer} disabled={loading}>Submit Transfer Record</Button>
+                <div className="text-[11px] text-muted-foreground bg-blue-50/50 dark:bg-blue-950/30 p-2.5 rounded border border-blue-100 dark:border-blue-900">
+                  💡 <strong>ملاحظة:</strong> عند اختيار <strong>Move Out</strong> سيقوم الأرشيف الشهري بوضع رمز <code>T</code> لجميع الأيام من تاريخ التحويل فصاعداً. وعند اختيار <strong>Move In</strong> سيضع رمز <code>T</code> لجميع الأيام السابقة لتاريخ التحويل.
+                </div>
+                <Button className="w-full" onClick={submitTransfer} disabled={loading}>حفظ حركة التحويل (Submit Transfer)</Button>
               </div>
             )}
 
             {transfers.length === 0 ? (
               <div className="text-center py-8 text-gray-500 text-sm border rounded">
-                No transfer history found.
+                No transfer history found / لا توجد سجلات تحويل سابقة لهذا الموظف.
               </div>
             ) : (
                <div className="space-y-3">
@@ -491,7 +497,7 @@ export function EmployeeProfileSheet({ open, onOpenChange, employee, defaultDate
                   <div key={tr.id} className="border flex items-center justify-between p-3 rounded-md bg-white dark:bg-gray-900">
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-full ${tr.type === 'Move In' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        <Plane className={`h-4 w-4 ${tr.type === 'Move Out' ? 'rotate-45' : 'rotate-[135deg]'}`} />
+                        <Plane className={`h-4 w-4 ${tr.type === 'Move Out' || tr.type === 'Change ID' ? 'rotate-45' : 'rotate-[135deg]'}`} />
                       </div>
                       <div>
                         <p className="text-sm font-medium">{tr.type} <span className="text-gray-400 font-normal">({tr.date})</span></p>

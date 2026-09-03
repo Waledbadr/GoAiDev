@@ -19,6 +19,8 @@ export const DEVICE_PROJECT_MAP: Record<string, string> = {
   "headoffice1": "Jeddah Housing Camp-Hamdaniah-(Old Gypsum Factory)",
   "premco camp": "Jeddah Housing Camp-Hamdaniah-(Old Gypsum Factory)",
   "security-oldwoodcamp": "Jeddah Housing Camp-Hamdaniah-(Old Gypsum Factory)",
+  "securityho-3": "Jeddah Housing Camp-Hamdaniah-(Old Gypsum Factory)",
+  "security-ho-3": "Jeddah Housing Camp-Hamdaniah-(Old Gypsum Factory)",
 
   // Jeddah Housing Camp-Hamdaniah-(Old Wood Factory)
   "airport60": "Jeddah Housing Camp-Hamdaniah-(Old Wood Factory)",
@@ -56,7 +58,7 @@ export const DEVICE_PROJECT_MAP: Record<string, string> = {
 };
 
 export const getProjectFromDevice = (deviceName: string): string => {
-  if (!deviceName) return "غير معروف";
+  if (!deviceName || deviceName === 'System Generated' || deviceName === 'Unknown' || deviceName === 'غير معروف') return "";
   
   // Try exact match first (case insensitive)
   const normalized = deviceName.trim().toLowerCase();
@@ -79,7 +81,6 @@ export const getProjectFromDevice = (deviceName: string): string => {
     }
   }
   
-  // If we can't find a mapped project, fallback to returning the raw device name
-  // so data isn't lost, but it highlights it's an unmapped device.
-  return deviceName;
+  // If we can't find a mapped project, return empty string so fallback to record.projectName is used
+  return "";
 };

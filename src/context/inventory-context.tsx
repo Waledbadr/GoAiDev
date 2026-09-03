@@ -427,10 +427,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     loadInventory();
-    const unsub = auth ? onAuthStateChanged(auth, (u) => {
+    let isMounted = true;
+    const _auth = auth;
+    const unsub = _auth ? onAuthStateChanged(_auth, async (u) => {
       if (u) {
         if (!isLoaded.current) loadInventory();
       } else {
+        // Wait for authStateReady to ensure this isn't a cross-tab transient state
+        await _auth.authStateReady();
+        if (!isMounted) return;
+        if (_auth.currentUser) return; // Still signed in
+
         // Signed out: unsubscribe and reset
         if (inventoryUnsubscribeRef.current) { try { inventoryUnsubscribeRef.current(); } catch {} inventoryUnsubscribeRef.current = null; }
         if (categoriesUnsubscribeRef.current) { try { categoriesUnsubscribeRef.current(); } catch {} categoriesUnsubscribeRef.current = null; }
@@ -445,6 +452,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       }
     }) : undefined;
     return () => {
+      isMounted = false;
       if (inventoryUnsubscribeRef.current) inventoryUnsubscribeRef.current();
       if (categoriesUnsubscribeRef.current) categoriesUnsubscribeRef.current();
       if (transfersUnsubscribeRef.current) transfersUnsubscribeRef.current();

@@ -138,11 +138,19 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
 
   // Ensure we auto-subscribe once the user signs in (in case pages call before auth)
   useEffect(() => {
-    if (!auth) return; // local mode; page will call explicitly
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const _auth = auth;
+    if (!_auth) return; // local mode; page will call explicitly
+    let isMounted = true;
+    const unsub = onAuthStateChanged(_auth, async (u) => {
       if (u) {
+        if (!isMounted) return;
         loadOrders();
       } else {
+        // Wait for authStateReady to ensure this isn't a cross-tab transient state
+        await _auth.authStateReady();
+        if (!isMounted) return;
+        if (_auth.currentUser) return; // Still signed in
+
         // Signed out: stop listener and reset state
         if (unsubscribeRef.current) {
           try { unsubscribeRef.current(); } catch {}
@@ -152,7 +160,10 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         setLoading(false);
       }
     });
-    return () => unsub();
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [loadOrders]);
   
   const generateNewOrderId = async (): Promise<string> => {
