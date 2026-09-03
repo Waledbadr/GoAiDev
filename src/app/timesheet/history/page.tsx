@@ -283,17 +283,11 @@ function TimesheetHistoryContent() {
 
     loadResidences();
 
-    if (!db) {
-      setLoading(false);
-      return;
-    }
-
     const fetchData = async () => {
       try {
-        await authReady;
         if (!active) return;
 
-        // Fetch all timesheet data from Cloudflare D1
+        // Fetch all timesheet data from Cloudflare D1 / API
         const [d1Emps, d1Leaves, d1Exceptions, d1Transfers, d1Records] = await Promise.all([
           d1Client.getDocs<any>('housingEmployees'),
           d1Client.getDocs<any>('timesheetLeaves'),
@@ -339,24 +333,11 @@ function TimesheetHistoryContent() {
       }
     };
 
-    if (auth) {
-      const unsub = onAuthStateChanged(auth, (u) => {
-        if (u) {
-          fetchData();
-        } else {
-          if (active) setLoading(false);
-        }
-      });
-      return () => {
-        active = false;
-        unsub();
-      };
-    } else {
-      fetchData();
-      return () => {
-        active = false;
-      };
-    }
+    fetchData();
+
+    return () => {
+      active = false;
+    };
   }, [daysArray, defaultMonth, filterMonth, loadResidences]);
 
   // Group data by Residence (projectName) -> Employee

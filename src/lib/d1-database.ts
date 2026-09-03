@@ -6,6 +6,7 @@ import { d1RemoteSync } from './d1-remote-sync';
 const DB_DIR = path.resolve('data');
 const DB_FILE = path.join(DB_DIR, 'cpc-d1-database.json');
 const DUMP_FILE = path.resolve('data_exports', 'firestore-dump-complete.json');
+const SEED_FILE = path.resolve('src', 'data', 'seed-data.json');
 
 class D1DatabaseEngine {
   private cache: Map<string, Map<string, any>> = new Map();
@@ -19,12 +20,14 @@ class D1DatabaseEngine {
     if (this.isLoaded) return;
     try {
       if (!fs.existsSync(DB_DIR)) {
-        fs.mkdirSync(DB_DIR, { recursive: true });
+        try { fs.mkdirSync(DB_DIR, { recursive: true }); } catch {}
       }
 
       let sourcePath = DB_FILE;
       if (!fs.existsSync(DB_FILE) && fs.existsSync(DUMP_FILE)) {
         sourcePath = DUMP_FILE;
+      } else if (!fs.existsSync(DB_FILE) && fs.existsSync(SEED_FILE)) {
+        sourcePath = SEED_FILE;
       }
 
       if (fs.existsSync(sourcePath)) {
@@ -43,9 +46,9 @@ class D1DatabaseEngine {
           this.cache.set(colName, colMap);
         }
 
-        // Ensure saved to primary DB_FILE
+        // Ensure saved to primary DB_FILE if writable
         if (sourcePath !== DB_FILE) {
-          this.persist();
+          try { this.persist(); } catch {}
         }
       }
       this.isLoaded = true;
@@ -67,7 +70,7 @@ class D1DatabaseEngine {
 
       fs.writeFileSync(DB_FILE, JSON.stringify(out, null, 2), 'utf8');
     } catch (e) {
-      console.error('[D1DatabaseEngine] Persist error:', e);
+      // Gracefully ignore write errors on read-only serverless filesystems (e.g., Vercel)
     }
   }
 
