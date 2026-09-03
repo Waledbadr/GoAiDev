@@ -68,6 +68,7 @@ import { InlineNewContractDraft } from './InlineNewContractDraft';
 import { ContractPrintView } from './ContractPrintView';
 import { ContractAddendaAndAttachments } from './ContractAddendaAndAttachments';
 import { ContractContextMenu } from './ContractContextMenu';
+import { ContractStudioDialog } from './ContractStudioDialog';
 import { EditLinkedResidencesDialog } from '@/components/contracts/EditLinkedResidencesDialog';
 import { differenceInDays, parseISO, addMonths, addYears, format } from 'date-fns';
 
@@ -93,6 +94,8 @@ export function ContractWorkspaceView() {
   // Active Selected Contract ID & Mode
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDraftingNew, setIsDraftingNew] = useState(false);
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [editingContractForStudio, setEditingContractForStudio] = useState<Contract | null>(null);
   const [printingContract, setPrintingContract] = useState<Contract | null>(null);
   const [residenceEditContract, setResidenceEditContract] = useState<Contract | null>(null);
 
@@ -364,8 +367,8 @@ export function ContractWorkspaceView() {
           <Button
             size="sm"
             onClick={() => {
-              setSelectedId(null);
-              setIsDraftingNew(true);
+              setEditingContractForStudio(null);
+              setIsStudioOpen(true);
             }}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 h-8 px-3 rounded-xl shadow-md shadow-indigo-600/20"
           >
@@ -710,6 +713,19 @@ export function ContractWorkspaceView() {
                         {isAr ? 'إيقاف مؤقت' : 'Suspend'}
                       </>
                     )}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEditingContractForStudio(activeContract);
+                      setIsStudioOpen(true);
+                    }}
+                    className="bg-indigo-500/20 hover:bg-indigo-600 border-indigo-400/30 text-white text-xs gap-1.5 h-9 px-3.5 rounded-xl shadow-xs"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
+                    {isAr ? 'الاستوديو المطور ⚡' : 'Full Studio ⚡'}
                   </Button>
                 </div>
 
@@ -1073,8 +1089,8 @@ export function ContractWorkspaceView() {
         onPrint={(c) => setPrintingContract(c)}
         onEditResidences={(c) => setResidenceEditContract(c)}
         onEdit={(c) => {
-          setSelectedId(c.id);
-          setIsDraftingNew(false);
+          setEditingContractForStudio(c);
+          setIsStudioOpen(true);
         }}
         onToggleSuspend={(c) => handleToggleSuspend(c)}
         onArchive={(c) => handleArchive(c)}
@@ -1095,6 +1111,21 @@ export function ContractWorkspaceView() {
         contract={residenceEditContract}
         residences={residences}
         isAr={isAr}
+      />
+
+      {/* Contract Studio Dialog 2.0 */}
+      <ContractStudioDialog
+        open={isStudioOpen}
+        onOpenChange={setIsStudioOpen}
+        contractToEdit={editingContractForStudio}
+        onSave={async (data) => {
+          if (editingContractForStudio) {
+            await updateContract(editingContractForStudio.id, data);
+          } else {
+            const newId = await createContract(data);
+            setSelectedId(newId);
+          }
+        }}
       />
     </div>
   );
