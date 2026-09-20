@@ -34,27 +34,37 @@ export const DEVICE_PROJECT_MAP: Record<string, string> = {
   // Makkah Housing Camp (Zahir)
   "h-a.khayat camp02": "Makkah Housing Camp (Zahir)",
   "h-a.khayatcamp-2": "Makkah Housing Camp (Zahir)",
+  "shamia-48": "Makkah Housing Camp (Zahir)",
   
   // Red Sea Housing Camp
   "sharma": "Red Sea Housing Camp",
   "sharma-1": "Red Sea Housing Camp",
+  "sharma-2": "Red Sea Housing Camp",
   "sharma-3": "Red Sea Housing Camp",
   "sharma-4": "Red Sea Housing Camp",
   "sharma-5": "Red Sea Housing Camp",
   "sharma-6 eng": "Red Sea Housing Camp",
+  "sharma -7": "Red Sea Housing Camp",
+  "sharma-7": "Red Sea Housing Camp",
   "umluj housing": "Red Sea Housing Camp",
   
   // Riyadh Housing Camp
   "malaz-01": "Riyadh Housing Camp",
+  "darahiya-10": "Riyadh Housing Camp",
+  "woodriyadh-4": "Riyadh Housing Camp",
+  "wood riyadh": "Riyadh Housing Camp",
+  "riyadh105": "Riyadh Housing Camp",
   
   // Riyadh King Saud University Housing Camp
   "h-ksauh-r": "Riyadh King Saud University Housing Camp",
   "hksauh-r1": "Riyadh King Saud University Housing Camp",
   "ksauh-r": "Riyadh King Saud University Housing Camp",
+  "ksauh-n": "Riyadh King Saud University Housing Camp",
   "riyadh102": "Riyadh King Saud University Housing Camp",
   
   // Riyadh Remaal Housing Camp
   "althomama housing camp": "Riyadh Remaal Housing Camp",
+  "remal housing new": "Riyadh Remaal Housing Camp",
 };
 
 export const getProjectFromDevice = (deviceName: string): string => {

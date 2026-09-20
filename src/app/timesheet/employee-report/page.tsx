@@ -53,7 +53,9 @@ import {
   Lock,
   Filter,
   Users,
-  ArrowUpDown
+  ArrowUpDown,
+  Flame,
+  Info
 } from 'lucide-react';
 
 import * as XLSX from 'xlsx';
@@ -529,10 +531,27 @@ function EmployeeReportInner() {
 
         if (!isSubscribed) return;
 
-        const attList = (allAttendance || []).filter((r: any) => String(r.employeeId).trim() === empKey);
-        const lList = (allLeaves || []).filter((l: any) => String(l.employeeId).trim() === empKey || String(l.badgeId).trim() === empKey || l.employeeDocId === empKey);
-        const tList = (allTransfers || []).filter((t: any) => String(t.employeeId).trim() === empKey || String(t.badgeId).trim() === empKey);
-        const eList = (allExceptions || []).filter((e: any) => String(e.employeeId).trim() === empKey || String(e.badgeId).trim() === empKey);
+        // Collect all linked badges (in case of Badge ID changes / Change ID)
+        const relevantBadgeKeys = new Set<string>([empKey]);
+        (allTransfers || []).forEach((t: any) => {
+          const bId = String(t.badgeId || t.employeeId || '').trim();
+          const match = String(t.location || '').match(/\b\d{4,6}\b/);
+          const newB = match ? match[0] : '';
+          if (bId === empKey && newB) relevantBadgeKeys.add(newB);
+          if (newB === empKey && bId) relevantBadgeKeys.add(bId);
+        });
+        (employees || []).forEach((e: any) => {
+          const bId = String(e.employeeId || e.badgeId || '').trim();
+          const match = String(e.residenceLocation || '').match(/\b\d{4,6}\b/);
+          const newB = match ? match[0] : '';
+          if (bId === empKey && newB) relevantBadgeKeys.add(newB);
+          if (newB === empKey && bId) relevantBadgeKeys.add(bId);
+        });
+
+        const attList = (allAttendance || []).filter((r: any) => relevantBadgeKeys.has(String(r.employeeId).trim()));
+        const lList = (allLeaves || []).filter((l: any) => relevantBadgeKeys.has(String(l.employeeId).trim()) || relevantBadgeKeys.has(String(l.badgeId).trim()) || l.employeeDocId === empKey);
+        const tList = (allTransfers || []).filter((t: any) => relevantBadgeKeys.has(String(t.employeeId).trim()) || relevantBadgeKeys.has(String(t.badgeId).trim()));
+        const eList = (allExceptions || []).filter((e: any) => relevantBadgeKeys.has(String(e.employeeId).trim()) || relevantBadgeKeys.has(String(e.badgeId).trim()));
 
         setAttendanceRecords(attList);
         setLeaves(lList);
@@ -698,11 +717,66 @@ function EmployeeReportInner() {
         status = 'Absent';
       }
 
-      // If present, apply standard timesheet scaling (8.0 RH base, excess as OT)
+      const baseDailyHours = currentEmp?.dailyHours || 8.0;
+      const isThursday = dayOfWeek === 4;
+
+      let requiredHours = baseDailyHours;
+      if (isFriday) {
+        requiredHours = 0;
+      } else if (isThursday) {
+        requiredHours = baseDailyHours === 8.5 ? 5.5 : (currentEmp?.thursdayHours || baseDailyHours);
+      }
+      if (activeEvent && activeEvent.type === 'reduced_hours') {
+        requiredHours = activeEvent.requiredHours || 6.0;
+      }
+
+      const officialShiftStart = baseDailyHours === 8.5 ? '08:30' : '08:00';
+      const officialShiftEnd = baseDailyHours === 8.5
+        ? (isThursday ? '14:00' : '17:00')
+        : (isThursday ? '16:00' : '16:00');
+
+      // If present, apply standard timesheet scaling based on actual required shift
       if (status === 'Present') {
-        if (attRecord && attRecord.regularHours !== undefined && attRecord.overtimeHours !== undefined && attRecord.regularHours > 0) {
+        if (checkIn && checkOut && checkIn !== checkOut) {
+          const toMins = (t: string) => {
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+          };
+          let inM = toMins(checkIn);
+          let outM = toMins(checkOut);
+          if (outM < inM) outM += 24 * 60;
+
+          // Apply 15-minute grace period for employees with 8.5 base hours (08:30 to 08:45)
+          if (baseDailyHours === 8.5) {
+            const shiftStartMins = 8 * 60 + 30; // 08:30 (510)
+            const gracePeriodEnd = shiftStartMins + 15; // 08:45 (525)
+            if (inM > shiftStartMins && inM <= gracePeriodEnd) {
+              inM = shiftStartMins;
+            }
+          }
+
+          const presenceMins = outM - inM;
+          const roundedMins = Math.round(presenceMins / 15) * 15;
+          const workedHoursNum = Number((roundedMins / 60).toFixed(2));
+          totalHours = workedHoursNum;
+
+          if (isFriday) {
+            regularHours = 8.0;
+            overtimeHours = workedHoursNum;
+          } else if (activeEvent && activeEvent.type === 'holiday') {
+            regularHours = 8.0;
+            overtimeHours = workedHoursNum;
+          } else if (requiredHours > 0) {
+            const ratio = workedHoursNum / requiredHours;
+            const scaledTotal = ratio * 8.0;
+            regularHours = Math.min(scaledTotal, 8.0);
+            overtimeHours = scaledTotal > 8.0 ? Math.round((scaledTotal - 8.0) * 100) / 100 : 0;
+          }
+          regularHours = Math.round(regularHours * 100) / 100;
+          overtimeHours = Math.round(overtimeHours * 100) / 100;
+        } else if (attRecord && attRecord.regularHours !== undefined && attRecord.regularHours > 0) {
           regularHours = attRecord.regularHours;
-          overtimeHours = attRecord.overtimeHours;
+          overtimeHours = attRecord.overtimeHours || 0;
         } else if (totalHours > 0) {
           regularHours = Math.min(8.0, totalHours);
           overtimeHours = totalHours > 8.0 ? Math.round((totalHours - 8.0) * 10) / 10 : 0;
@@ -722,12 +796,208 @@ function EmployeeReportInner() {
         status = 'Transferred';
       }
 
+      let actualPresenceMinutes = 0;
+      let earlyInMinutes = 0;
+      let lateOutMinutes = 0;
+      let otCalculationType: 'none' | 'late_out' | 'early_late' | 'thursday' | 'weekend' | 'holiday' = 'none';
+      let otBreakdownSummary = '';
+      let otCalculationFormula = '';
+
+      if (checkIn && checkOut && checkIn !== checkOut) {
+        const toMins = (t: string) => {
+          const [h, m] = t.split(':').map(Number);
+          return h * 60 + m;
+        };
+
+        const inM = toMins(checkIn);
+        let outM = toMins(checkOut);
+        if (outM < inM) outM += 24 * 60;
+        actualPresenceMinutes = outM - inM;
+
+        const startM = toMins(officialShiftStart);
+        const endM = toMins(officialShiftEnd);
+
+        if (inM < startM) {
+          earlyInMinutes = startM - inM;
+        }
+        if (outM > endM) {
+          lateOutMinutes = outM - endM;
+        }
+
+        if (isFriday && (totalHours > 0 || (punches && punches.length > 0))) {
+          otCalculationType = 'weekend';
+          otBreakdownSummary = isAr ? 'عمل يوم جمعة (راحة أسبوعية)' : 'Friday Weekend Work';
+          otCalculationFormula = isAr 
+            ? `دوام يوم جمعة: كامل ساعات التواجد الفعلي (${(actualPresenceMinutes / 60).toFixed(2)} س) تحتسب كإضافي + 8.0 س بدل راحة` 
+            : `Friday work: full presence (${(actualPresenceMinutes / 60).toFixed(2)}h) credited as OT + 8.0h Rest Allowance`;
+        } else if (activeEvent?.type === 'holiday' && (totalHours > 0 || (punches && punches.length > 0))) {
+          otCalculationType = 'holiday';
+          otBreakdownSummary = isAr ? 'عمل في عطلة رسمية' : 'Official Holiday Work';
+          otCalculationFormula = isAr 
+            ? `دوام عطلة رسمية: كامل ساعات التواجد الفعلي (${(actualPresenceMinutes / 60).toFixed(2)} س) تحتسب كإضافي + 8.0 س بدل عطلة` 
+            : `Holiday work: full presence (${(actualPresenceMinutes / 60).toFixed(2)}h) credited as OT + 8.0h Holiday Allowance`;
+        } else if (isThursday && requiredHours === 5.5 && overtimeHours > 0) {
+          otCalculationType = 'thursday';
+          otBreakdownSummary = isAr ? `معادلة دوام الخميس (5.5 س)` : `Thursday Scaling (5.5h)`;
+          otCalculationFormula = isAr 
+            ? `معادلة الخميس: (${(actualPresenceMinutes / 60).toFixed(2)} س عمل ÷ 5.5 س مطلوب) × 8.0 = ${totalHours.toFixed(2)} س ➔ 8.0 س عادي + ${overtimeHours} س إضافي`
+            : `Thursday scaling: (${(actualPresenceMinutes / 60).toFixed(2)}h ÷ 5.5h) × 8 = ${totalHours.toFixed(2)}h ➔ 8h RH + ${overtimeHours}h OT`;
+        } else if (overtimeHours > 0) {
+          otCalculationType = lateOutMinutes > 0 && earlyInMinutes > 0 ? 'early_late' : 'late_out';
+          const parts = [];
+          if (lateOutMinutes > 0) {
+            const h = Math.floor(lateOutMinutes / 60);
+            const m = lateOutMinutes % 60;
+            parts.push(isAr ? `خروج متأخر (+${h > 0 ? `${h}س ` : ''}${m}د)` : `Late out (+${h > 0 ? `${h}h ` : ''}${m}m)`);
+          }
+          if (earlyInMinutes > 0) {
+            parts.push(isAr ? `دخول مبكر (+${earlyInMinutes}د)` : `Early in (+${earlyInMinutes}m)`);
+          }
+          otBreakdownSummary = parts.join(' | ');
+          if (baseDailyHours === 8.5) {
+            otCalculationFormula = isAr 
+              ? `معادلة الدوام: (${(actualPresenceMinutes / 60).toFixed(2)} س عمل ÷ 8.5 س مطلوب) × 8.0 = ${totalHours.toFixed(2)} س ➔ 8.0 س عادي + ${overtimeHours} س إضافي`
+              : `Scale formula: (${(actualPresenceMinutes / 60).toFixed(2)}h ÷ 8.5h) × 8 = ${totalHours.toFixed(2)}h ➔ 8h RH + ${overtimeHours}h OT`;
+          } else {
+            otCalculationFormula = isAr 
+              ? `العمل الفعلي (${(actualPresenceMinutes / 60).toFixed(2)} س) - المطلوب (${requiredHours} س) = ${overtimeHours} س إضافي`
+              : `Actual (${(actualPresenceMinutes / 60).toFixed(2)}h) - Required (${requiredHours}h) = ${overtimeHours}h OT`;
+          }
+        }
+      }
+
+      let checkInDiff: { text: string; type: 'early' | 'late'; label: string } | null = null;
+      let checkOutDiff: { text: string; type: 'extra' | 'early_exit'; label: string } | null = null;
+
+      const toMinutes = (t: string) => {
+        if (!t || !t.includes(':')) return 0;
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      const formatHoursValue = (val: number) => {
+        const rounded = Math.round(val * 100) / 100;
+        if (Math.round(rounded) === rounded) return Math.round(rounded).toString();
+        if (Math.round(rounded * 10) / 10 === rounded) return rounded.toFixed(1);
+        return rounded.toFixed(2);
+      };
+
+      // Case A: Day with OVERTIME (OT > 0)
+      if (overtimeHours > 0) {
+        if (isFriday || status === 'Weekend' || status === 'Holiday') {
+          // Friday or Holiday: full presence is credited as overtime
+          checkOutDiff = {
+            text: `+${formatHoursValue(overtimeHours)}`,
+            type: 'extra',
+            label: isAr ? `عمل عطلة أسبوعية: +${overtimeHours} س إضافي` : `Weekend work: +${overtimeHours}h OT`
+          };
+        } else {
+          // Calculate early in minutes and late out minutes
+          const inM = toMinutes(checkIn);
+          const outM = toMinutes(checkOut);
+          const startM = toMinutes(officialShiftStart);
+          const endM = toMinutes(officialShiftEnd);
+
+          const earlyM = inM < startM ? startM - inM : 0;
+          const lateM = outM > endM ? outM - endM : 0;
+          const totalExtraMins = earlyM + lateM;
+
+          if (totalExtraMins > 0) {
+            // Split the overtimeHours proportionally between early arrival and late departure
+            const earlyShare = earlyM > 0 ? (earlyM / totalExtraMins) * overtimeHours : 0;
+            const lateShare = overtimeHours - earlyShare;
+
+            if (earlyShare >= 0.1) {
+              checkInDiff = {
+                text: `+${formatHoursValue(earlyShare)}`,
+                type: 'early',
+                label: isAr
+                  ? `دخول مبكر ساهم في الإضافي (+${earlyM} دقيقة ➔ +${formatHoursValue(earlyShare)} س إضافي)`
+                  : `Early in (+${earlyM}m ➔ +${formatHoursValue(earlyShare)}h OT)`
+              };
+            }
+
+            if (lateShare >= 0.1) {
+              checkOutDiff = {
+                text: `+${formatHoursValue(lateShare)}`,
+                type: 'extra',
+                label: isAr
+                  ? `خروج متأخر ساهم في الإضافي (+${lateM} دقيقة ➔ +${formatHoursValue(lateShare)} س إضافي)`
+                  : `Late out (+${lateM}m ➔ +${formatHoursValue(lateShare)}h OT)`
+              };
+            }
+          } else {
+            // Overtime from scaling without raw early/late
+            checkOutDiff = {
+              text: `+${formatHoursValue(overtimeHours)}`,
+              type: 'extra',
+              label: isAr ? `إضافي مستحق: +${overtimeHours} س` : `Overtime: +${overtimeHours}h`
+            };
+          }
+        }
+      } 
+      // Case B: Day with ACTUAL SHORTAGE in Regular Hours (RH < 8.0)
+      else if (status === 'Present' && regularHours < 8.0 && !isFriday) {
+        const shortageHours = Math.round((8.0 - regularHours) * 100) / 100;
+        const inM = toMinutes(checkIn);
+        const outM = toMinutes(checkOut);
+        const startM = toMinutes(officialShiftStart);
+        const endM = toMinutes(officialShiftEnd);
+
+        // Account for 15-min grace period for 8.5 shift
+        const effectiveStartM = baseDailyHours === 8.5 ? startM + 15 : startM;
+        const lateInM = inM > effectiveStartM ? inM - startM : 0;
+        const earlyExitM = outM < endM ? endM - outM : 0;
+        const totalShortageMins = lateInM + earlyExitM;
+
+        if (totalShortageMins > 0) {
+          const lateShare = lateInM > 0 ? (lateInM / totalShortageMins) * shortageHours : 0;
+          const exitShare = shortageHours - lateShare;
+
+          if (lateShare >= 0.1) {
+            checkInDiff = {
+              text: `-${formatHoursValue(lateShare)}`,
+              type: 'late',
+              label: isAr
+                ? `تأخر عن الحضور أدى لنقص في الدوام (-${lateInM} دقيقة ➔ -${formatHoursValue(lateShare)} س)`
+                : `Late in shortage (-${lateInM}m ➔ -${formatHoursValue(lateShare)}h)`
+            };
+          }
+
+          if (exitShare >= 0.1) {
+            checkOutDiff = {
+              text: `-${formatHoursValue(exitShare)}`,
+              type: 'early_exit',
+              label: isAr
+                ? `انصراف مبكر أدى لنقص في الدوام (-${earlyExitM} دقيقة ➔ -${formatHoursValue(exitShare)} س)`
+                : `Early exit shortage (-${earlyExitM}m ➔ -${formatHoursValue(exitShare)}h)`
+            };
+          }
+        } else {
+          // General shortage
+          checkInDiff = {
+            text: `-${formatHoursValue(shortageHours)}`,
+            type: 'late',
+            label: isAr ? `نقص في ساعات الدوام: -${shortageHours} س` : `Shortage: -${shortageHours}h`
+          };
+        }
+      }
+
+      const formatMinutesDuration = (mins: number) => {
+        if (!mins) return '-';
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return isAr ? `${h}س ${m > 0 ? `${m}د` : ''}` : `${h}h ${m > 0 ? `${m}m` : ''}`;
+      };
+
       matrix[dateStr] = {
         date: dateStr,
         dayName: new Date(dateStr).toLocaleDateString(isAr ? 'ar-SA' : 'en-US', { weekday: 'short' }),
         status,
         checkIn,
         checkOut,
+        checkInDiff,
+        checkOutDiff,
         totalHours,
         regularHours,
         overtimeHours,
@@ -737,7 +1007,20 @@ function EmployeeReportInner() {
         leaveType: activeLeave?.type || activeLeave?.leaveType,
         exceptionType: activeException?.type || activeException?.exceptionType,
         isFriday,
+        isThursday,
         isToday,
+        baseDailyHours,
+        requiredHours,
+        requiredHoursFormatted: isFriday ? (isAr ? 'راحة' : 'Rest') : `${requiredHours} ${isAr ? 'س' : 'h'}${isThursday ? (isAr ? ' (خميس)' : ' (Thu)') : ''}`,
+        officialShiftStart,
+        officialShiftEnd,
+        actualPresenceMinutes,
+        actualDurationFormatted: formatMinutesDuration(actualPresenceMinutes),
+        earlyInMinutes,
+        lateOutMinutes,
+        otCalculationType,
+        otBreakdownSummary,
+        otCalculationFormula
       };
     });
 
@@ -756,6 +1039,13 @@ function EmployeeReportInner() {
     let expectedRH = 0;
     let expectedDays = 0;
     let expectedWorkdays = 0;
+
+    let totalOTDays = 0;
+    let thursdayOTSum = 0;
+    let weekendHolidayOTSum = 0;
+    let normalDayOTSum = 0;
+    let earlyInMinutesSum = 0;
+    let lateOutMinutesSum = 0;
 
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -810,6 +1100,20 @@ function EmployeeReportInner() {
         daysWorked++;
         totalRH += d.regularHours || 8.0;
       }
+
+      // Track detailed overtime metrics
+      if (d.overtimeHours > 0) {
+        totalOTDays++;
+        if (d.isFriday || d.status === 'Weekend' || d.status === 'Holiday') {
+          weekendHolidayOTSum += d.overtimeHours;
+        } else if (d.isThursday) {
+          thursdayOTSum += d.overtimeHours;
+        } else {
+          normalDayOTSum += d.overtimeHours;
+        }
+        if (d.earlyInMinutes > 0) earlyInMinutesSum += d.earlyInMinutes;
+        if (d.lateOutMinutes > 0) lateOutMinutesSum += d.lateOutMinutes;
+      }
     });
 
     const attendanceRate = expectedRH > 0 ? Math.min(100, Math.round((totalRH / expectedRH) * 100)) : 0;
@@ -831,7 +1135,14 @@ function EmployeeReportInner() {
       attendanceRate,
       estimatedPayable,
       baseSalary,
-      otAmount: Math.round(otAmount)
+      otAmount: Math.round(otAmount),
+      totalOTDays,
+      thursdayOTSum: Math.round(thursdayOTSum * 10) / 10,
+      weekendHolidayOTSum: Math.round(weekendHolidayOTSum * 10) / 10,
+      normalDayOTSum: Math.round(normalDayOTSum * 10) / 10,
+      earlyInMinutesSum,
+      lateOutMinutesSum,
+      averageOTPerDay: totalOTDays > 0 ? Math.round((totalOT / totalOTDays) * 10) / 10 : 0
     };
   }, [dailyMatrix, currentEmp]);
 
@@ -859,7 +1170,7 @@ function EmployeeReportInner() {
       [`الموظف: ${currentEmp.nameAr} (${currentEmp.name})`, `رقم الوظيفي: ${currentEmp.employeeId || currentEmp.badgeId}`],
       [`المهنة: ${currentEmp.professionAr || currentEmp.profession}`, `الفترة: ${periodLabel} (${filterMonth})`],
       [''],
-      ['التاريخ', 'اليوم', 'الحالة', 'وقت الدخول', 'وقت الخروج', 'ساعات عادية (RH)', 'ساعات إضافية (OT)', 'إجمالي الساعات', 'الموقع/الجهاز']
+      ['التاريخ', 'اليوم', 'الحالة', 'وقت الدخول', 'وقت الخروج', 'التواجد الفعلي', 'الدوام المطلوب', 'ساعات عادية (RH)', 'ساعات إضافية (OT)', 'تفصيل الإضافي والدخول/الخروج', 'المعادلة الحسابية', 'الموقع/الجهاز']
     ];
 
     Object.values(dailyMatrix).forEach((d: any) => {
@@ -869,9 +1180,12 @@ function EmployeeReportInner() {
         d.status,
         d.checkIn || '-',
         d.checkOut || '-',
+        d.actualDurationFormatted || '-',
+        d.requiredHoursFormatted || '-',
         d.regularHours || 0,
         d.overtimeHours || 0,
-        d.totalHours || 0,
+        d.otBreakdownSummary || '-',
+        d.otCalculationFormula || '-',
         d.deviceName || '-'
       ]);
     });
@@ -883,6 +1197,10 @@ function EmployeeReportInner() {
     rows.push(['إجمالي أيام الإجازات', monthlyStats.daysLeave]);
     rows.push(['ساعات العمل العادية (RH)', monthlyStats.totalRH]);
     rows.push(['ساعات العمل الإضافية (OT)', monthlyStats.totalOT]);
+    rows.push(['عدد أيام الإضافي', monthlyStats.totalOTDays]);
+    rows.push(['إضافي أيام الخميس (معادلة 5.5س)', monthlyStats.thursdayOTSum]);
+    rows.push(['إضافي الأيام العادية (خروج متأخر/دخول مبكر)', monthlyStats.normalDayOTSum]);
+    rows.push(['إضافي الجمع والعطلات', monthlyStats.weekendHolidayOTSum]);
     rows.push(['نسبة الالتزام والدوام', `${monthlyStats.attendanceRate}%`]);
 
     const worksheet = XLSX.utils.aoa_to_sheet(rows);
@@ -1274,10 +1592,19 @@ function EmployeeReportInner() {
 
       {/* 5. Interactive Comprehensive Tabs Section */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full print:hidden">
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 w-full bg-slate-100 dark:bg-gray-900 p-1 rounded-xl">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full bg-slate-100 dark:bg-gray-900 p-1 rounded-xl">
           <TabsTrigger value="matrix" className="text-xs md:text-sm flex items-center gap-2">
             <Calendar className="w-4 h-4" />
             {isAr ? 'جدول الحضور اليومي' : 'Daily Punch Matrix'}
+          </TabsTrigger>
+          <TabsTrigger value="overtime" className="text-xs md:text-sm flex items-center gap-2">
+            <Flame className="w-4 h-4 text-orange-500" />
+            {isAr ? 'تفصيل الإضافي' : 'Overtime Breakdown'}
+            {monthlyStats.totalOT > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] font-bold bg-orange-500 text-white rounded-full">
+                +{monthlyStats.totalOT}
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="punches" className="text-xs md:text-sm flex items-center gap-2">
             <Clock className="w-4 h-4" />
@@ -1305,14 +1632,16 @@ function EmployeeReportInner() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-xs text-right border-collapse min-w-[700px]">
+              <table className="w-full text-xs text-right border-collapse min-w-[750px]">
                 <thead>
                   <tr className="bg-slate-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold border-b">
                     <th className="p-3 border-l">{isAr ? 'التاريخ' : 'Date'}</th>
                     <th className="p-3 border-l">{isAr ? 'اليوم' : 'Day'}</th>
                     <th className="p-3 border-l">{isAr ? 'الحالة' : 'Status'}</th>
-                    <th className="p-3 border-l">{isAr ? 'وقت الدخول' : 'Check-In'}</th>
-                    <th className="p-3 border-l">{isAr ? 'وقت الخروج' : 'Check-Out'}</th>
+                    <th className="p-3 border-l text-center">{isAr ? 'وقت الدخول' : 'Check-In'}</th>
+                    <th className="p-3 border-l text-center">{isAr ? 'وقت الخروج' : 'Check-Out'}</th>
+                    <th className="p-3 border-l text-center">{isAr ? 'التواجد الفعلي' : 'Presence'}</th>
+                    <th className="p-3 border-l text-center">{isAr ? 'الدوام المطلوب' : 'Required'}</th>
                     <th className="p-3 border-l text-center">{isAr ? 'ساعات RH' : 'RH'}</th>
                     <th className="p-3 border-l text-center">{isAr ? 'إضافي OT' : 'OT'}</th>
                     <th className="p-3 border-l">{isAr ? 'شريط البصمات' : 'Punches Log'}</th>
@@ -1366,16 +1695,54 @@ function EmployeeReportInner() {
                             <span className="text-gray-400 opacity-60">-</span>
                           )}
                         </td>
-                        <td className="p-3 border-l font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
-                          {d.checkIn || '-'}
+                        <td className="p-2.5 border-l font-mono text-center">
+                          <div className="text-emerald-700 dark:text-emerald-400 font-bold">
+                            {d.checkIn || '-'}
+                          </div>
+                          {d.checkInDiff && (
+                            <div className="mt-0.5">
+                              <span
+                                className={`inline-block px-1.5 py-0.2 text-[10px] font-black font-mono rounded shadow-xs ${
+                                  d.checkInDiff.type === 'late'
+                                    ? 'text-rose-700 bg-rose-100/90 dark:bg-rose-950/70 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
+                                    : 'text-emerald-700 bg-emerald-100/90 dark:bg-emerald-950/70 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                                }`}
+                                title={d.checkInDiff.label}
+                              >
+                                {d.checkInDiff.text}
+                              </span>
+                            </div>
+                          )}
                         </td>
-                        <td className="p-3 border-l font-mono text-blue-700 dark:text-blue-400 font-semibold">
-                          {d.checkOut || '-'}
+                        <td className="p-2.5 border-l font-mono text-center">
+                          <div className="text-blue-700 dark:text-blue-400 font-bold">
+                            {d.checkOut || '-'}
+                          </div>
+                          {d.checkOutDiff && (
+                            <div className="mt-0.5">
+                              <span
+                                className={`inline-block px-1.5 py-0.2 text-[10px] font-black font-mono rounded shadow-xs ${
+                                  d.checkOutDiff.type === 'early_exit'
+                                    ? 'text-rose-700 bg-rose-100/90 dark:bg-rose-950/70 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
+                                    : 'text-emerald-700 bg-emerald-100/90 dark:bg-emerald-950/70 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                                }`}
+                                title={d.checkOutDiff.label}
+                              >
+                                {d.checkOutDiff.text}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 border-l text-center font-mono font-medium text-slate-700 dark:text-slate-300">
+                          {d.actualDurationFormatted || '-'}
+                        </td>
+                        <td className="p-3 border-l text-center text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                          {d.requiredHoursFormatted || '-'}
                         </td>
                         <td className="p-3 border-l text-center font-bold">
                           {d.regularHours > 0 ? d.regularHours : '-'}
                         </td>
-                        <td className="p-3 border-l text-center font-bold text-orange-600">
+                        <td className="p-3 border-l text-center font-bold text-orange-600 font-mono">
                           {d.overtimeHours > 0 ? `+${d.overtimeHours}` : '-'}
                         </td>
                         <td className="p-3 border-l">
@@ -1402,6 +1769,253 @@ function EmployeeReportInner() {
                   })}
                 </tbody>
               </table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* TAB 2: Overtime Breakdown Audit Dashboard */}
+        <TabsContent value="overtime" className="mt-4 space-y-4">
+          {/* Overtime Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border shadow-sm bg-gradient-to-br from-orange-50/50 to-amber-50/30 dark:from-orange-950/20 dark:to-amber-950/10 border-orange-200 dark:border-orange-900/50">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                    {isAr ? 'إجمالي الساعات الإضافية (OT)' : 'Total Overtime Hours'}
+                  </p>
+                  <h3 className="text-3xl font-black text-orange-600 dark:text-orange-400 mt-1">
+                    +{monthlyStats.totalOT} <span className="text-xs font-normal">{isAr ? 'ساعة' : 'hrs'}</span>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {isAr ? `قيمة الاستحقاق التقديرية: ~${monthlyStats.otAmount.toLocaleString()} ريال` : `Estimated Value: ~${monthlyStats.otAmount} SAR`}
+                  </p>
+                </div>
+                <div className="p-3 bg-orange-500 text-white rounded-xl shadow-sm">
+                  <Flame className="w-6 h-6" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {isAr ? 'عدد أيام العمل الإضافي' : 'Overtime Days Count'}
+                  </p>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
+                    {monthlyStats.totalOTDays} <span className="text-xs font-normal text-muted-foreground">{isAr ? 'يوم' : 'days'}</span>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {monthlyStats.totalOTDays > 0 ? (
+                      isAr ? `بمعدل ${monthlyStats.averageOTPerDay} س / يوم إضافي` : `Avg ${monthlyStats.averageOTPerDay} h/OT day`
+                    ) : (
+                      isAr ? 'لا يوجد إضافي هذا الشهر' : 'No overtime this month'
+                    )}
+                  </p>
+                </div>
+                <div className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl">
+                  <CalendarDays className="w-6 h-6" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {isAr ? 'إضافي الأيام العادية' : 'Regular Weekday OT'}
+                  </p>
+                  <h3 className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+                    +{monthlyStats.normalDayOTSum} <span className="text-xs font-normal text-muted-foreground">{isAr ? 'ساعة' : 'hrs'}</span>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {isAr ? 'ناتج عن الخروج المتأخر / الدخول المبكر' : 'From late out / early in punches'}
+                  </p>
+                </div>
+                <div className="p-3 bg-blue-100 dark:bg-blue-950/50 text-blue-600 rounded-xl">
+                  <Clock className="w-6 h-6" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border shadow-sm">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {isAr ? 'إضافي الخميس والعطلات' : 'Thursday & Weekend OT'}
+                  </p>
+                  <h3 className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+                    +{(monthlyStats.thursdayOTSum + monthlyStats.weekendHolidayOTSum).toFixed(1)} <span className="text-xs font-normal text-muted-foreground">{isAr ? 'ساعة' : 'hrs'}</span>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {monthlyStats.thursdayOTSum} {isAr ? 'س خميس /' : 'h Thu /'} {monthlyStats.weekendHolidayOTSum} {isAr ? 'س جمعة' : 'h Fri'}
+                  </p>
+                </div>
+                <div className="p-3 bg-amber-100 dark:bg-amber-950/50 text-amber-600 rounded-xl">
+                  <Award className="w-6 h-6" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Overtime Policy & Calculation Rules Info Banner */}
+          <Card className="border border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20 shadow-sm">
+            <CardContent className="p-4 space-y-2">
+              <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300 font-bold text-sm">
+                <Info className="w-4 h-4 text-blue-600" />
+                <span>{isAr ? 'قواعد ومعايير احتساب العمل الإضافي بناءً على أوقات الدخول والخروج' : 'Overtime Calculation Policy & Rules'}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300 pt-1">
+                <div className="p-3 bg-background/80 rounded-lg border">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100 mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    {isAr ? 'الأيام العادية (الأحد - الأربعاء)' : 'Regular Days (Sun - Wed)'}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {isAr
+                      ? `الدوام الرسمي من ${currentEmp?.dailyHours === 8.5 ? '08:30 ص حتى 05:00 م (8.5 ساعة)' : '08:00 ص حتى 04:00 م (8.0 ساعات)'}. أي تواجد إضافي بسبب الخروج المتأخر أو الدخول المبكر يتجاوز الدوام المطلوب يحتسب كإضافي.`
+                      : `Official shift from 08:30 to 17:00 (8.5h). Any extra presence from late checkout or early checkin exceeding shift is credited as overtime.`}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-background/80 rounded-lg border">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100 mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    {isAr ? 'يوم الخميس (دوام مخفض 5.5س)' : 'Thursday (Reduced Shift 5.5h)'}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {isAr
+                      ? 'الدوام الرسمي حتى 02:00 م. يتم احتساب ساعات الدوام بمعادلة النسبة والتناسب: (التواجد الفعلي ÷ 5.5) × 8.0، وما زاد عن 8.0 ساعات يحتسب كإضافي مباشر.'
+                      : 'Shift ends at 14:00. Scaling formula: (Actual Presence ÷ 5.5) × 8.0. Hours exceeding 8.0 RH are credited directly as Overtime.'}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-background/80 rounded-lg border">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100 mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-purple-500" />
+                    {isAr ? 'يوم الجمعة والعطلات الرسمية' : 'Fridays & Official Holidays'}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {isAr
+                      ? 'الجمعة عطلة أسبوعية رسمية. في حال وجود بصمات عمل، تحتسب كامل ساعات التواجد الفعلي كإضافي صافي 100% بالإضافة إلى استحقاق 8.0 ساعات بدل راحة أسبوعية.'
+                      : 'Fridays are weekly rest days. If worked, all presence hours are 100% credited as Overtime plus 8.0h weekly rest allowance.'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Overtime Detailed Audit Table */}
+          <Card className="border shadow-sm">
+            <CardHeader className="p-4 pb-2 border-b">
+              <CardTitle className="text-base font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-orange-500" />
+                  {isAr ? 'كشف تفاصيل الأيام المستحقة لساعات العمل الإضافي (OT)' : 'Detailed Overtime Records Audit'}
+                </span>
+                <Badge variant="outline" className="font-mono text-xs">
+                  {monthlyStats.totalOTDays} {isAr ? 'أيام مستحقة' : 'qualifying days'}
+                </Badge>
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {isAr
+                  ? 'عرض تفصيلي لجميع الأيام التي تم فيها تسجيل وقت إضافي بناءً على أوقات بصمة الدخول والخروج وفترة التواجد الفعلي'
+                  : 'Breakdown of all days with overtime hours based on check-in/out timestamps and actual physical presence'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {monthlyStats.totalOTDays === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Flame className="w-10 h-10 text-orange-300 mx-auto mb-2 opacity-50" />
+                  <p className="font-semibold">{isAr ? 'لا توجد ساعات عمل إضافية مسجلة لهذا الشهر' : 'No overtime hours recorded for this month.'}</p>
+                  <p className="text-xs mt-1">{isAr ? 'الموظف التزم بساعات الدوام النظامية دون تسجيل وقت إضافي.' : 'The employee adhered to standard shift hours without overtime.'}</p>
+                </div>
+              ) : (
+                <table className="w-full text-xs text-right border-collapse min-w-[750px]">
+                  <thead>
+                    <tr className="bg-slate-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold border-b">
+                      <th className="p-3 border-l">{isAr ? 'التاريخ واليوم' : 'Date & Day'}</th>
+                      <th className="p-3 border-l">{isAr ? 'نوع وتصنيف الإضافي' : 'OT Type'}</th>
+                      <th className="p-3 border-l">{isAr ? 'وقت الدخول' : 'Check-In'}</th>
+                      <th className="p-3 border-l">{isAr ? 'وقت الخروج' : 'Check-Out'}</th>
+                      <th className="p-3 border-l text-center">{isAr ? 'التواجد الفعلي' : 'Presence'}</th>
+                      <th className="p-3 border-l text-center">{isAr ? 'الدوام المطلوب' : 'Required'}</th>
+                      <th className="p-3 border-l text-center">{isAr ? 'ساعات عادية (RH)' : 'RH'}</th>
+                      <th className="p-3 border-l text-center">{isAr ? 'ساعات إضافي (OT)' : 'OT'}</th>
+                      <th className="p-3">{isAr ? 'طريقة ومعادلة الاحتساب' : 'Calculation Formula'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                    {Object.values(dailyMatrix)
+                      .filter((d: any) => d.overtimeHours > 0)
+                      .map((d: any) => (
+                        <tr key={d.date} className="hover:bg-slate-50 dark:hover:bg-gray-900 transition-colors">
+                          <td className="p-3 font-mono font-medium border-l">
+                            <div>{d.date}</div>
+                            <div className="text-[11px] font-semibold text-muted-foreground">{d.dayName}</div>
+                          </td>
+                          <td className="p-3 border-l">
+                            {d.otCalculationType === 'thursday' && (
+                              <Badge className="bg-amber-500 text-white text-[11px]">
+                                {isAr ? 'معادلة الخميس (5.5س)' : 'Thursday Scaling'}
+                              </Badge>
+                            )}
+                            {(d.otCalculationType === 'weekend' || d.otCalculationType === 'holiday') && (
+                              <Badge className="bg-purple-600 text-white text-[11px]">
+                                {isAr ? 'عمل عطلة أسبوعية' : 'Weekend Work'}
+                              </Badge>
+                            )}
+                            {(d.otCalculationType === 'late_out' || d.otCalculationType === 'early_late') && (
+                              <div className="flex flex-col gap-1">
+                                {d.lateOutMinutes > 0 && (
+                                  <Badge className="bg-orange-600 text-white text-[10px]">
+                                    {isAr ? `خروج متأخر (+${Math.floor(d.lateOutMinutes / 60) > 0 ? `${Math.floor(d.lateOutMinutes / 60)}س ` : ''}${d.lateOutMinutes % 60}د)` : `Late Out`}
+                                  </Badge>
+                                )}
+                                {d.earlyInMinutes > 0 && (
+                                  <Badge className="bg-emerald-600 text-white text-[10px]">
+                                    {isAr ? `دخول مبكر (+${d.earlyInMinutes}د)` : `Early In`}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 border-l font-mono text-emerald-700 dark:text-emerald-400 font-bold">
+                            <div>{d.checkIn || '-'}</div>
+                            {d.earlyInMinutes > 0 && (
+                              <div className="text-[10px] text-emerald-600 font-normal">
+                                {isAr ? `(+${d.earlyInMinutes}د قبل الدوام)` : `(+${d.earlyInMinutes}m early)`}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 border-l font-mono text-blue-700 dark:text-blue-400 font-bold">
+                            <div>{d.checkOut || '-'}</div>
+                            {d.lateOutMinutes > 0 && (
+                              <div className="text-[10px] text-orange-600 font-normal">
+                                {isAr ? `(+${Math.floor(d.lateOutMinutes / 60) > 0 ? `${Math.floor(d.lateOutMinutes / 60)}س ` : ''}${d.lateOutMinutes % 60}د بعد الدوام)` : `(+${Math.floor(d.lateOutMinutes / 60)}h late)`}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 border-l text-center font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {d.actualDurationFormatted}
+                          </td>
+                          <td className="p-3 border-l text-center text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                            {d.requiredHoursFormatted}
+                          </td>
+                          <td className="p-3 border-l text-center font-bold">
+                            {d.regularHours}
+                          </td>
+                          <td className="p-3 border-l text-center font-bold text-orange-600 font-mono text-sm bg-orange-50/50 dark:bg-orange-950/20">
+                            +{d.overtimeHours}
+                          </td>
+                          <td className="p-3 font-mono text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                            {d.otCalculationFormula || d.otBreakdownSummary}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
