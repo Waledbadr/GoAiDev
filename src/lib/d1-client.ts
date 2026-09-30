@@ -10,11 +10,16 @@ export interface D1Document {
 
 export const d1Client = {
   /**
-   * Fetch all documents in a collection
+   * Fetch all documents in a collection, with optional query filters (e.g. { startDate, endDate })
    */
-  async getDocs<T = D1Document>(collectionName: string): Promise<T[]> {
+  async getDocs<T = D1Document>(collectionName: string, queryParams?: Record<string, string>): Promise<T[]> {
     try {
-      const res = await fetch(`/api/d1/${collectionName}`);
+      let url = `/api/d1/${collectionName}`;
+      if (queryParams && Object.keys(queryParams).length > 0) {
+        const sp = new URLSearchParams(queryParams);
+        url += `?${sp.toString()}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
       const json = await res.json();
       if (json.ok && Array.isArray(json.docs)) {

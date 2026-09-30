@@ -307,12 +307,16 @@ function TimesheetHistoryContent() {
     try {
       if (force) setIsRefreshing(true);
 
+      const dateStartStr = daysArray[0];
+      const dateEndStr = daysArray[daysArray.length - 1];
+      const dateParams = (dateStartStr && dateEndStr) ? { startDate: dateStartStr, endDate: dateEndStr } : undefined;
+
       const [d1Emps, d1Leaves, d1Exceptions, d1Transfers, d1Records] = await Promise.all([
         d1Client.getDocs<any>('housingEmployees'),
         d1Client.getDocs<any>('timesheetLeaves'),
         d1Client.getDocs<any>('timesheetExceptions'),
         d1Client.getDocs<any>('timesheetTransfers'),
-        d1Client.getDocs<any>('attendanceRecords'),
+        d1Client.getDocs<any>('attendanceRecords', dateParams),
       ]);
 
       const emps: Record<string, any> = {};
@@ -329,10 +333,8 @@ function TimesheetHistoryContent() {
       const fetchedLeaves = d1Leaves || [];
       const fetchedExceptions = d1Exceptions || [];
       const allRecords = d1Records || [];
-      const dateStartStr = daysArray[0];
-      const dateEndStr = daysArray[daysArray.length - 1];
       const fetchedRecords = daysArray.length > 0
-        ? allRecords.filter(r => r.date >= dateStartStr && r.date <= dateEndStr)
+        ? allRecords.filter(r => (!dateStartStr || r.date >= dateStartStr) && (!dateEndStr || r.date <= dateEndStr))
         : allRecords;
       const fetchedTransfers = d1Transfers || [];
 
@@ -351,6 +353,17 @@ function TimesheetHistoryContent() {
       setIsRefreshing(false);
     }
   }, [daysArray, filterMonth]);
+
+  // Listen for instant timesheet updates triggered by imports/syncs
+  useEffect(() => {
+    const handleTimesheetUpdate = () => {
+      fetchData(true);
+    };
+    window.addEventListener('estatecare:timesheet-updated', handleTimesheetUpdate);
+    return () => {
+      window.removeEventListener('estatecare:timesheet-updated', handleTimesheetUpdate);
+    };
+  }, [fetchData]);
 
   useEffect(() => {
     if (!filterMonth) return;

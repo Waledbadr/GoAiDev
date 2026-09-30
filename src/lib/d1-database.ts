@@ -1,10 +1,13 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { d1RemoteSync } from './d1-remote-sync';
 
-// Path to the primary D1 database store
-const DB_DIR = path.resolve('data');
+// Path to the primary D1 database store (uses writable /tmp on serverless/Vercel)
+const isVercel = process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const DB_DIR = isVercel ? path.join(os.tmpdir(), 'estatecare-d1') : path.resolve('data');
 const DB_FILE = path.join(DB_DIR, 'cpc-d1-database.json');
+const READONLY_DATA_FILE = path.resolve('data', 'cpc-d1-database.json');
 const DUMP_FILE = path.resolve('data_exports', 'firestore-dump-complete.json');
 const SEED_FILE = path.resolve('src', 'data', 'seed-data.json');
 
@@ -24,7 +27,9 @@ class D1DatabaseEngine {
       }
 
       let sourcePath = DB_FILE;
-      if (!fs.existsSync(DB_FILE) && fs.existsSync(DUMP_FILE)) {
+      if (!fs.existsSync(DB_FILE) && fs.existsSync(READONLY_DATA_FILE)) {
+        sourcePath = READONLY_DATA_FILE;
+      } else if (!fs.existsSync(DB_FILE) && fs.existsSync(DUMP_FILE)) {
         sourcePath = DUMP_FILE;
       } else if (!fs.existsSync(DB_FILE) && fs.existsSync(SEED_FILE)) {
         sourcePath = SEED_FILE;

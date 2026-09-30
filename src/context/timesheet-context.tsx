@@ -253,10 +253,12 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       }));
 
       // Smart non-destructive merge:
-      // Fetch existing records from D1 to protect completed punches from being overwritten by empty/dummy records
+      // Fetch only existing records in the relevant date range to protect completed punches
       let existingMap = new Map<string, any>();
       try {
-        const existingDocs = await d1Client.getDocs('attendanceRecords');
+        const dates = recordsToSave.map((r) => r.date).filter(Boolean).sort();
+        const dateFilter = dates.length > 0 ? { startDate: dates[0], endDate: dates[dates.length - 1] } : undefined;
+        const existingDocs = await d1Client.getDocs('attendanceRecords', dateFilter);
         (existingDocs || []).forEach(doc => {
           if (doc && doc.id) {
             existingMap.set(String(doc.id), doc);
@@ -291,6 +293,21 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
 
       // High-speed batch save to Cloudflare D1
       const savedCount = await d1Client.setDocsBatch('attendanceRecords', mergedRecordsToSave);
+
+      // Invalidate timesheet history cache and notify active pages instantly
+      if (typeof window !== 'undefined') {
+        try {
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('timesheet_history_data_')) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach((k) => localStorage.removeItem(k));
+          window.dispatchEvent(new CustomEvent('estatecare:timesheet-updated'));
+        } catch {}
+      }
 
       // Clear in-memory data to signal that the save was successful
       setRawPunches([]);
