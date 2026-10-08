@@ -135,6 +135,7 @@ export function TimesheetView() {
     isFetching,
     isProcessing,
     isSaving,
+    saveProgress,
     fetchAndProcessAttendance,
     syncProcessedDataToFirestore,
     deleteAllAttendanceRecords,
@@ -271,7 +272,11 @@ export function TimesheetView() {
           <Loader2 className="h-5 w-5 animate-spin" />
           <div>
             <p className="font-semibold">{isAr ? "جاري الحفظ في قاعدة البيانات" : "Saving to database"}</p>
-            <p className="text-xs opacity-80">{isAr ? "يتم دمج السجلات وحماية البيانات الموجودة…" : "Merging records and preserving existing data…"}</p>
+            <p className="text-xs opacity-80">
+              {saveProgress
+                ? (isAr ? `تم حفظ ${saveProgress.current} من أصل ${saveProgress.total} سجل…` : `Saved ${saveProgress.current} of ${saveProgress.total} records…`)
+                : (isAr ? "يتم تقسيم السجلات وحفظها بدون انقطاع…" : "Chunking records and saving seamlessly…")}
+            </p>
           </div>
         </div>
       )}

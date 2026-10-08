@@ -65,18 +65,59 @@ export const d1Client = {
   },
 
   /**
-   * Save multiple documents at once (High-performance Batch)
+   * Save multiple documents in manageable chunks (High-performance Chunked Batch)
+   * Splits large sets into 100-doc chunks to comfortably fit within Vercel's 4.5MB request limit
+   * and avoid serverless execution timeouts.
    */
-  async setDocsBatch<T = any>(collectionName: string, docs: T[]): Promise<number> {
+  async setDocsBatch<T = any>(
+    collectionName: string,
+    docs: T[],
+    onProgress?: (saved: number, total: number) => void
+  ): Promise<number> {
     if (!docs || docs.length === 0) return 0;
-    const res = await fetch(`/api/d1/${collectionName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ docs }),
+
+    const CHUNK_SIZE = 100;
+    let totalSaved = 0;
+
+    for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+      const chunk = docs.slice(i, i + CHUNK_SIZE);
+      const res = await fetch(`/api/d1/${collectionName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docs: chunk }),
+      });
+
+      if (!res.ok) {
+        let errMsg = `Failed to batch save to D1 (${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData.error) errMsg = errData.error;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
+      const json = await res.json();
+      if (!json.ok && json.error) {
+        throw new Error(json.error);
+      }
+
+      totalSaved += chunk.length;
+      if (onProgress) {
+        onProgress(totalSaved, docs.length);
+      }
+    }
+
+    return totalSaved;
+  },
+
+  /**
+   * Bulk clear all documents in a collection
+   */
+  async clearCollection(collectionName: string): Promise<void> {
+    const res = await fetch(`/api/d1/${collectionName}?clearAll=true`, {
+      method: 'DELETE',
     });
-    if (!res.ok) throw new Error(`Failed to batch save to D1 (${res.status})`);
-    const json = await res.json();
-    return json.count || docs.length;
+    if (!res.ok) throw new Error(`Failed to clear collection in D1 (${res.status})`);
   },
 
   /**

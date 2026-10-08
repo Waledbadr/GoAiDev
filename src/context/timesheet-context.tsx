@@ -20,6 +20,7 @@ interface TimesheetContextType {
   isFetching: boolean;
   isProcessing: boolean;
   isSaving: boolean;
+  saveProgress: { current: number; total: number } | null;
   fetchAndProcessAttendance: (startDate: string, endDate: string) => Promise<void>;
   syncProcessedDataToFirestore: () => Promise<void>;
   clearProcessedAttendance: () => void;
@@ -49,6 +50,7 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
   const [isFetching, setIsFetching] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState<{ current: number; total: number } | null>(null);
   const { toast } = useToast();
   const { locale } = useLanguage();
   const isAr = locale === "ar";
@@ -291,8 +293,15 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
         return newRec;
       });
 
-      // High-speed batch save to Cloudflare D1
-      const savedCount = await d1Client.setDocsBatch('attendanceRecords', mergedRecordsToSave);
+      // Chunked batch save to Cloudflare D1 / Firestore
+      setSaveProgress({ current: 0, total: mergedRecordsToSave.length });
+      const savedCount = await d1Client.setDocsBatch(
+        'attendanceRecords',
+        mergedRecordsToSave,
+        (current, total) => {
+          setSaveProgress({ current, total });
+        }
+      );
 
       // Invalidate timesheet history cache and notify active pages instantly
       if (typeof window !== 'undefined') {
@@ -317,8 +326,8 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       toast({
         title: isAr ? "تم الحفظ بنجاح" : "Save Successful",
         description: isAr
-          ? `تم حفظ ومزامنة ${savedCount} سجل على قاعدة بيانات Cloudflare D1 فوراً.`
-          : `Saved and synced ${savedCount} records to Cloudflare D1 instantly.`,
+          ? `تم حفظ ومزامنة ${savedCount} سجل على قاعدة البيانات بنجاح.`
+          : `Saved and synced ${savedCount} records to database successfully.`,
         variant: "default",
       });
 
@@ -326,11 +335,12 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
       console.error("Error syncing timesheet:", error);
       toast({
         title: isAr ? "فشل الحفظ" : "Save Failed",
-        description: isAr ? "حدث خطأ أثناء محاولة حفظ السجلات." : "An error occurred while saving the records.",
+        description: error?.message || (isAr ? "حدث خطأ أثناء محاولة حفظ السجلات." : "An error occurred while saving the records."),
         variant: "destructive",
       });
     } finally {
       setIsSaving(false);
+      setSaveProgress(null);
     }
   };
 
@@ -341,20 +351,27 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
 
   const deleteAllAttendanceRecords = async () => {
     try {
-      const records = await d1Client.getDocs('attendanceRecords');
-      if (!records || records.length === 0) {
-        toast({ title: isAr ? 'لا توجد سجلات' : 'No records found', variant: 'default' });
-        return;
-      }
-      for (const rec of records) {
-        await d1Client.deleteDoc('attendanceRecords', rec.id);
+      await d1Client.clearCollection('attendanceRecords');
+
+      if (typeof window !== 'undefined') {
+        try {
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('timesheet_history_data_')) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach((k) => localStorage.removeItem(k));
+          window.dispatchEvent(new CustomEvent('estatecare:timesheet-updated'));
+        } catch {}
       }
 
       toast({
         title: isAr ? 'تم الحذف' : 'Records Deleted',
         description: isAr
-          ? `تم حذف ${records.length} سجل بنجاح من Cloudflare D1. يمكنك إعادة الاستيراد الآن.`
-          : `Deleted ${records.length} records from Cloudflare D1. You can re-import now.`,
+          ? 'تم حذف جميع سجلات الحضور بنجاح. يمكنك إعادة الاستيراد الآن.'
+          : 'Deleted all attendance records successfully. You can re-import now.',
         variant: 'default',
       });
     } catch (error: any) {
@@ -378,6 +395,7 @@ export function TimesheetProvider({ children }: { children: ReactNode }) {
         isFetching,
         isProcessing,
         isSaving,
+        saveProgress,
         fetchAndProcessAttendance,
         syncProcessedDataToFirestore,
         clearProcessedAttendance,

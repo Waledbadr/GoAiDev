@@ -12,8 +12,8 @@ export interface CloudflareD1Config {
 
 export function getCloudflareD1Config(): CloudflareD1Config | null {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const dbId = process.env.CLOUDFLARE_DATABASE_ID;
-  const token = process.env.CLOUDFLARE_API_TOKEN || process.env.CLOUDFLARE_AUTH_TOKEN;
+  const dbId = process.env.CLOUDFLARE_DATABASE_ID || 'df5d6fab-efb5-4b09-b3a0-be536d7edaaf';
+  const token = process.env.CLOUDFLARE_API_TOKEN || process.env.CLOUDFLARE_AUTH_TOKEN || process.env.CF_API_TOKEN;
 
   if (!accountId || !dbId || !token) {
     return null;
@@ -45,14 +45,38 @@ export async function executeD1Query<T = any>(sql: string, params: any[] = []): 
     }
 
     const json = await res.json();
-    if (json.success && Array.isArray(json.result?.[0]?.results)) {
-      return json.result[0].results as T[];
+    if (json.success) {
+      const firstResult = json.result?.[0];
+      if (firstResult && Array.isArray(firstResult.results)) {
+        return firstResult.results as T[];
+      }
+      // For INSERT / UPDATE / DELETE queries where results is empty or omitted
+      return [] as T[];
     }
+    console.warn(`[Cloudflare D1 HTTP] Query unsuccessful:`, json.errors || json);
     return null;
   } catch (err) {
     console.warn('[Cloudflare D1 HTTP] Query execution error:', err);
     return null;
   }
+}
+
+let tableEnsured = false;
+export async function ensureD1Table(): Promise<boolean> {
+  if (tableEnsured) return true;
+  const sql = `CREATE TABLE IF NOT EXISTS firestore_documents (
+    collection_name TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    data JSON NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (collection_name, document_id)
+  );`;
+  const res = await executeD1Query(sql);
+  if (res !== null) {
+    tableEnsured = true;
+    return true;
+  }
+  return false;
 }
 
 export async function fetchDocsFromD1(
@@ -99,6 +123,8 @@ export async function saveDocToD1(collectionName: string, docId: string, data: a
   const cfg = getCloudflareD1Config();
   if (!cfg) return false;
 
+  await ensureD1Table();
+
   try {
     const jsonStr = JSON.stringify(data);
     const sql = `INSERT OR REPLACE INTO firestore_documents (collection_name, document_id, data) VALUES (?, ?, ?);`;
@@ -114,8 +140,10 @@ export async function saveBatchToD1(collectionName: string, docs: any[]): Promis
   const cfg = getCloudflareD1Config();
   if (!cfg || !docs || docs.length === 0) return 0;
 
-  // Chunk docs into batches of 50 to comfortably stay below SQLite parameter limits
-  const CHUNK_SIZE = 50;
+  await ensureD1Table();
+
+  // Chunk docs into batches of 100 to stay safely under SQLite 999 parameter limits (300 params per query)
+  const CHUNK_SIZE = 100;
   let totalSaved = 0;
 
   for (let i = 0; i < docs.length; i += CHUNK_SIZE) {

@@ -63,6 +63,7 @@ class D1DatabaseEngine {
   }
 
   private persist() {
+    if (isVercel) return; // Never write massive JSON files to ephemeral /tmp on Vercel
     try {
       if (!fs.existsSync(DB_DIR)) {
         fs.mkdirSync(DB_DIR, { recursive: true });

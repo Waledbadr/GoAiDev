@@ -34,6 +34,11 @@ class D1RemoteSyncQueue {
   }
 
   private async flushQueue() {
+    const isVercel = process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+    if (isVercel || process.env.NODE_ENV === 'production') {
+      this.queue = [];
+      return;
+    }
     if (this.isProcessing || this.queue.length === 0) return;
     this.isProcessing = true;
 
