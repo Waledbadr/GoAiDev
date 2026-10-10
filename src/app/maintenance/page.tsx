@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useEffect, useState, useMemo } from "react";
 import { useLanguage } from '@/context/language-context';
 import { useMaintenance, type MaintenanceRequest, type MaintenanceStatus } from "@/context/maintenance-context";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUsers } from "@/context/users-context";
 
@@ -121,14 +121,7 @@ export default function MaintenancePage() {
                                 <Badge variant={request.priority === 'High' ? 'destructive' : request.priority === 'Medium' ? 'secondary' : 'outline'}>{request.priority}</Badge>
                             </TableCell>
                             <TableCell>
-                                {request.date
-                                    ? format(
-                                        typeof (request.date as any).toDate === 'function'
-                                            ? (request.date as any).toDate()
-                                            : new Date(request.date as any),
-                                        'PPP'
-                                      )
-                                    : '-'}
+                                {safeFormat(request.date, 'PPP')}
                             </TableCell>
                             <TableCell className="text-right">
                                 <DropdownMenu>

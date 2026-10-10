@@ -14,6 +14,7 @@ import {
 import { Building2, FileText, Home, PieChart as PieChartIcon, Truck, Users, Wallet, Clock, ArrowRight, Activity, Bell, AlertTriangle, TrendingUp, ShoppingCart, Wrench, ClipboardList, UserCog, GitBranch, ListOrdered, LifeBuoy, Settings, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { format, subDays } from 'date-fns';
+import { parseSafeDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 import { collection, query, where, getDocs, orderBy, limit, getCountFromServer } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
@@ -318,7 +319,9 @@ function DashboardContent() {
   
   const expiringContracts = activeContracts.filter(c => {
     if (!c.endDate) return false;
-    const daysLeft = (new Date(c.endDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+    const end = parseSafeDate(c.endDate);
+    if (!end) return false;
+    const daysLeft = (end.getTime() - Date.now()) / (1000 * 3600 * 24);
     return daysLeft > 0 && daysLeft <= 30;
   });
 

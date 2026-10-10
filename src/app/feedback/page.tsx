@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useUsers } from '@/context/users-context';
-import { formatDistanceToNow } from 'date-fns';
+import { safeFormatDistanceToNow } from '@/lib/date-utils';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -88,7 +88,7 @@ export default function MyFeedbackPage() {
                 </div>
               </div>
               <CardDescription>
-                {f.createdAt ? formatDistanceToNow(typeof f.createdAt === 'object' ? (f.createdAt as any).toDate?.() || new Date() : new Date(f.createdAt as any), { addSuffix: true }) : ''}
+                {safeFormatDistanceToNow(f.createdAt, { addSuffix: true })}
               </CardDescription>
             </CardHeader>
           </Card>

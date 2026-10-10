@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 
 export default function MRVReceiptsPage() {
   const { getMRVs } = useInventory();
@@ -71,7 +71,7 @@ export default function MRVReceiptsPage() {
               ) : rows.length > 0 ? rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">{r.id}</TableCell>
-                  <TableCell>{r.date ? format(r.date.toDate(), 'PPP') : '-'}</TableCell>
+                  <TableCell>{safeFormat(r.date, 'PPP')}</TableCell>
                   <TableCell>{residenceName(r.residenceId)}</TableCell>
                   <TableCell>{r.itemCount ?? '-'}</TableCell>
                   <TableCell>{r.supplierName || '-'}</TableCell>

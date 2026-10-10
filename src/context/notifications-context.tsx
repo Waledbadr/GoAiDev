@@ -9,6 +9,8 @@ import safeOnSnapshot from '@/lib/firestore-utils';
 import { useUsers } from './users-context';
 import { useToast } from '@/hooks/use-toast';
 
+import { parseSafeDate } from '@/lib/date-utils';
+
 export interface Notification {
   id: string;
   userId: string;
@@ -61,6 +63,11 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
           const userNotifs = currentUser?.id
             ? d1Notifs.filter((n: any) => n.userId === currentUser.id || n.userEmail === currentUser.email)
             : d1Notifs;
+          userNotifs.sort((a: any, b: any) => {
+            const timeA = parseSafeDate(a.createdAt)?.getTime() || 0;
+            const timeB = parseSafeDate(b.createdAt)?.getTime() || 0;
+            return timeB - timeA;
+          });
           setNotifications(userNotifs);
         }
       } catch (err) {

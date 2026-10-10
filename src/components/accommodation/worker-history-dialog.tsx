@@ -13,7 +13,7 @@ import { History, ArrowRight, ArrowLeft, Home, Building, LogIn, LogOut, ArrowRig
 import { useAccommodation, AccommodationHistory } from "@/context/accommodation-context";
 import { useUsers } from "@/context/users-context";
 import { useLanguage } from "@/context/language-context";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { Badge } from "@/components/ui/badge";
 import { EditHistoryDialog } from "./edit-history-dialog";
 import {
@@ -191,7 +191,7 @@ export function WorkerHistoryDialog({ workerId, workerName, trigger }: WorkerHis
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-muted-foreground">
-                          {format(new Date(item.actionDate), "yyyy-MM-dd HH:mm")}
+                          {safeFormat(item.actionDate, "yyyy-MM-dd HH:mm")}
                         </span>
                         <Badge variant="outline" className="flex items-center gap-1 text-[10px] px-1 py-0 h-5">
                           {getActionIcon(item.actionType)}

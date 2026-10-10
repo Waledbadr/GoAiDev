@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { useUsers } from "@/context/users-context";
 import { Printer, ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -172,14 +172,7 @@ export default function ServiceOrderDetailsPage() {
                 <div className="text-right">
                     <p className="font-semibold print-residence-title" style={{ fontWeight: 700 }}>{order.residenceName}</p>
                     <p className="text-sm text-muted-foreground print-date">
-                        {order.dateCreated
-                            ? format(
-                                typeof (order.dateCreated as any).toDate === 'function'
-                                    ? (order.dateCreated as any).toDate()
-                                    : new Date(order.dateCreated as any),
-                                "PPP"
-                              )
-                            : "—"}
+                        {safeFormat(order.dateCreated, "PPP", undefined, "—")}
                     </p>
                     <p className="text-sm text-muted-foreground print-date">
                         To: {order.destination?.name}

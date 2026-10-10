@@ -15,7 +15,7 @@ import { useNotifications } from '@/context/notifications-context';
 import { useTheme } from '@/components/theme-provider';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatDistanceToNow } from 'date-fns';
+import { safeFormatDistanceToNow } from '@/lib/date-utils';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import dynamic from 'next/dynamic';
@@ -487,12 +487,7 @@ export function AppHeader({ className, ...props }: HTMLAttributes<HTMLElement>) 
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-medium leading-snug truncate">{notification.title}</p>
                         <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {formatDistanceToNow(
-                            notification.createdAt && typeof (notification.createdAt as any).toDate === 'function'
-                              ? (notification.createdAt as any).toDate()
-                              : new Date((notification.createdAt as any) || Date.now()),
-                            { addSuffix: true }
-                          )}
+                          {safeFormatDistanceToNow(notification.createdAt, { addSuffix: true })}
                         </span>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{notification.message}</p>

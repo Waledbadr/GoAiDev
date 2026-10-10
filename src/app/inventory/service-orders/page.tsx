@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
 import { useServiceOrders } from "@/context/service-orders-context";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -147,14 +147,7 @@ export default function ServiceOrdersListPage() {
                     onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/inventory/service-orders/${o.codeShort}`); }}
                   >
                     <TableCell>
-                      {o.dateCreated
-                        ? format(
-                            typeof (o.dateCreated as any).toDate === 'function'
-                              ? (o.dateCreated as any).toDate()
-                              : new Date(o.dateCreated as any),
-                            "PPP"
-                          )
-                        : "—"}
+                      {safeFormat(o.dateCreated, "PPP", undefined, "—")}
                     </TableCell>
                     <TableCell>{o.residenceName}</TableCell>
                     <TableCell>{o.destination?.name}</TableCell>
@@ -227,14 +220,7 @@ export default function ServiceOrdersListPage() {
                           onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/inventory/service-orders/${o.codeShort}`); }}
                         >
                           <TableCell>
-                            {o.dateCreated
-                              ? format(
-                                  typeof (o.dateCreated as any).toDate === 'function'
-                                    ? (o.dateCreated as any).toDate()
-                                    : new Date(o.dateCreated as any),
-                                  "PPP"
-                                )
-                              : "—"}
+                            {safeFormat(o.dateCreated, "PPP", undefined, "—")}
                           </TableCell>
                           <TableCell>{o.residenceName}</TableCell>
                           <TableCell>{o.destination?.name}</TableCell>

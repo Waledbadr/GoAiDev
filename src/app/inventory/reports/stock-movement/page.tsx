@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Filter, TrendingUp, Download, Search, Calendar as CalendarIcon } from 'lucide-react';
 import { format, startOfDay, endOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import Link from 'next/link';
 import { useLanguage } from '@/context/language-context';
@@ -330,7 +331,7 @@ export default function StockMovementReportPage() {
     const csvContent = [
       headers.join(','),
       ...filteredTransactions.map(transaction => [
-        format(transaction.date.toDate(), 'yyyy-MM-dd HH:mm'),
+        safeFormat(transaction.date, 'yyyy-MM-dd HH:mm'),
         `"${transaction.itemNameEn || 'Unknown Item'}"`,
         getMovementTypeLabel(transaction.type),
         transaction.quantity,
@@ -803,7 +804,7 @@ export default function StockMovementReportPage() {
                           onClick={() => openTxDetails(transaction)}
                         >
                           <TableCell className="font-mono text-sm">
-                            {format(transaction.date.toDate(), 'MMM dd, yyyy HH:mm')}
+                            {safeFormat(transaction.date, 'MMM dd, yyyy HH:mm')}
                           </TableCell>
                           <TableCell className="font-medium">
                             {transaction.itemNameEn || dict.itemNotFound}
@@ -866,7 +867,7 @@ export default function StockMovementReportPage() {
                 {dict.typeLabel}: <span className="font-medium text-foreground">{selectedTx.type}</span>
               </div>
               <div>
-                {dict.date}: {selectedTx.date?.toDate ? format(selectedTx.date.toDate(), 'PPP p') : ''}
+                {dict.date}: {safeFormat(selectedTx.date, 'PPP p', undefined, '')}
               </div>
               <div>
                 {dict.referenceLabel}: <span className="font-mono">{selectedTx.referenceDocId || '—'}</span>

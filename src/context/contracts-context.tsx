@@ -72,24 +72,20 @@ interface ContractsContextType {
 
 const ContractsContext = createContext<ContractsContextType | undefined>(undefined);
 
+import { parseSafeDate } from '@/lib/date-utils';
+
 function fromTimestamp(val: any): string {
   if (!val) return '';
-  if (typeof val === 'string') return val;
-  if (val && typeof val.toDate === 'function') {
-    const d = val.toDate();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  if (val && val.seconds !== undefined) {
-    const d = new Date(val.seconds * 1000);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  return String(val);
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  const d = parseSafeDate(val);
+  if (!d) return typeof val === 'string' ? val : '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function toTimestamp(dateStr: string): Timestamp {
   if (!dateStr) return Timestamp.now();
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return Timestamp.now();
+  const d = parseSafeDate(dateStr);
+  if (!d) return Timestamp.now();
   return Timestamp.fromDate(d);
 }
 

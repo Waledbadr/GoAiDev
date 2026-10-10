@@ -12,7 +12,7 @@ import { useOrders, type Order } from "@/context/orders-context";
 import { useInventory, type MIV, type ReconciliationRequest, type InventoryTransaction, type StockTransfer } from "@/context/inventory-context";
 import { useEffect, useState, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { useUsers } from "@/context/users-context";
 import { useResidences } from "@/context/residences-context";
 import { useRouter } from 'next/navigation';
@@ -309,14 +309,7 @@ export default function DashboardPage() {
                                                 <div className="text-sm text-muted-foreground">{residences.find(r => String(r.id) === String(miv.residenceId))?.name || miv.residenceId}</div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {miv.date
-                                                        ? format(
-                                                            typeof (miv.date as any).toDate === 'function'
-                                                                ? (miv.date as any).toDate()
-                                                                : new Date(miv.date as any),
-                                                            'PPP'
-                                                          )
-                                                        : '-'}
+                                                    {safeFormat(miv.date, 'PPP')}
                                                 </TableCell>
                                             </TableRow>
                                         ))}

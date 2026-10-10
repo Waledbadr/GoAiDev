@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { useParams, useRouter } from 'next/navigation';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useResidences } from '@/context/residences-context';
 import { useUsers } from '@/context/users-context';
 import { Printer, Edit, Loader2, Upload, Paperclip } from 'lucide-react';
@@ -308,14 +308,14 @@ export default function MRVDetailsPage() {
             </div>
             <div className="text-right">
               <p className="font-semibold print-residence-title" style={{ fontWeight: 700 }}>{residenceName(data?.residenceId)}</p>
-              <p className="text-sm text-muted-foreground print-date">{data?.date ? format(data.date.toDate(), 'PPP') : '-'}</p>
+              <p className="text-sm text-muted-foreground print-date">{safeFormat(data?.date, 'PPP')}</p>
             </div>
           </div>
         </CardHeader>
         <CardContent className="pt-6">
           {/* MRV Meta in two columns */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground">Date • التاريخ:</span><span className="font-medium">{data?.date ? format(data.date.toDate(), 'PPpp') : '-'}</span></div>
+            <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground">Date • التاريخ:</span><span className="font-medium">{safeFormat(data?.date, 'PPpp')}</span></div>
             <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground">Residence • الموقع:</span><span className="font-medium">{residenceName(data?.residenceId)}</span></div>
             <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground">Supplier • المورد:</span><span className="font-medium">{data?.supplierName || '-'}</span></div>
             <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground">Invoice No. • رقم الفاتورة:</span><span className="font-medium">{data?.invoiceNo || '-'}</span></div>

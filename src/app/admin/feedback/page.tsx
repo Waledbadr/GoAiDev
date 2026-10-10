@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { formatDistanceToNow } from 'date-fns';
+import { safeFormatDistanceToNow } from '@/lib/date-utils';
 import { useUsers } from '@/context/users-context';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, updateDoc, doc, addDoc, serverTimestamp, limit } from 'firebase/firestore';
@@ -243,7 +243,7 @@ export default function AdminFeedbackPage() {
                   </div>
                 </div>
                 <CardDescription>
-                  {f.createdAt ? formatDistanceToNow(typeof f.createdAt === 'object' ? (f.createdAt as any).toDate?.() || new Date() : new Date(f.createdAt as any), { addSuffix: true }) : ''}
+                  {safeFormatDistanceToNow(f.createdAt, { addSuffix: true })}
                   {" "}• by {f.userId ? (getUserById(f.userId)?.name || 'Unknown') : 'Unknown'}
                 </CardDescription>
               </CardHeader>
@@ -344,7 +344,7 @@ export default function AdminFeedbackPage() {
                       <div className="flex flex-col">
                         <CardTitle className="text-base">{f.title} <span className="text-muted-foreground">({f.ticketId})</span></CardTitle>
                         <CardDescription>
-                          {f.createdAt ? formatDistanceToNow(typeof f.createdAt === 'object' ? (f.createdAt as any).toDate?.() || new Date() : new Date(f.createdAt as any), { addSuffix: true }) : ''}
+                          {safeFormatDistanceToNow(f.createdAt, { addSuffix: true })}
                           {" "}• by {f.userId ? (getUserById(f.userId)?.name || 'Unknown') : 'Unknown'}
                         </CardDescription>
                       </div>

@@ -9,7 +9,7 @@ import { useInventory } from "@/context/inventory-context";
 import { useOrders, type Order } from "@/context/orders-context";
 import { useEffect, useState, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useRouter } from "next/navigation";
 import { useUsers } from "@/context/users-context";
 import { ArrowRight, History, Archive, ChevronDown, ChevronUp, CheckCircle, Truck, Clock, XCircle, Plus, Paperclip } from "lucide-react";
@@ -118,7 +118,7 @@ export default function ReceiveMaterialsPage() {
             key: `mrv-${r.id}`,
             id: r.mrvShort || r.id,
             type: 'MRV',
-            dateLabel: r.requestedAt?.toDate ? format(r.requestedAt.toDate(), 'PPP') : '-',
+            dateLabel: safeFormat(r.requestedAt, 'PPP'),
             residence: residenceName(r.residenceId),
             items: (r.items || []).length,
             status: <Badge variant="secondary">Pending</Badge>,
@@ -155,7 +155,7 @@ export default function ReceiveMaterialsPage() {
                         key: `mr-${o.id}`,
                         id: o.id,
                         type: 'MR',
-                        dateLabel: o.date?.toDate ? format(o.date.toDate(), 'PPP') : '-',
+                        dateLabel: safeFormat(o.date, 'PPP'),
                         residence: residenceName(o.residenceId),
                         items: (o.items || []).length,
                         status: (
@@ -186,7 +186,7 @@ export default function ReceiveMaterialsPage() {
                         type: 'MRV',
             mrRef: mrv.orderId || null,
                         hasAttachment: !!(mrv.attachmentUrl || mrv.attachmentPath),
-                        dateLabel: mrv.date?.toDate ? format(mrv.date.toDate(), 'PPP') : '-',
+                        dateLabel: safeFormat(mrv.date, 'PPP'),
                         residence: residenceName(mrv.residenceId),
                         items: Number(mrv.itemCount || 0),
                         status: <Badge>Delivered</Badge>,

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { History, ArrowRight, LogIn, LogOut, ArrowRightLeft, User } from "lucide-react";
 import { useAccommodation, AccommodationHistory } from "@/context/accommodation-context";
 import { useUsers } from "@/context/users-context";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { Badge } from "@/components/ui/badge";
 
 interface RoomHistoryDialogProps {
@@ -84,7 +84,7 @@ export function RoomHistoryDialog({ roomId, roomName, trigger }: RoomHistoryDial
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono text-muted-foreground">
-                        {format(new Date(item.actionDate), "yyyy-MM-dd HH:mm")}
+                        {safeFormat(item.actionDate, "yyyy-MM-dd HH:mm")}
                       </span>
                       <Badge variant="outline" className="flex items-center gap-1 text-[10px] px-1 py-0 h-5">
                         {getActionIcon(item.actionType)}

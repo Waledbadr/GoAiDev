@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2, PackageCheck, PackageX } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -319,7 +319,7 @@ export default function ReceiveOrderPage() {
                      <div className="flex justify-between items-start">
                         <div>
                             <CardTitle>Request Details</CardTitle>
-                            <CardDescription>Request for <span className="font-semibold">{order.residence}</span> on {format(order.date.toDate(), 'PPP')}</CardDescription>
+                            <CardDescription>Request for <span className="font-semibold">{order.residence}</span> on {safeFormat(order.date, 'PPP')}</CardDescription>
                         </div>
                     </div>
                 </CardHeader>

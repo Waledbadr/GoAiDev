@@ -16,7 +16,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { FileUploadArea, type UploadedFile } from '@/components/ui/file-upload-area';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useLanguage } from '@/context/language-context';
@@ -260,7 +260,7 @@ export default function MRVApprovalDetailPage() {
           </div>
           <div>
             <div className="text-sm text-muted-foreground">Requested At</div>
-            <div className="font-medium">{data?.requestedAt?.toDate ? format(data.requestedAt.toDate(), 'PPpp') : '-'}</div>
+            <div className="font-medium">{safeFormat(data?.requestedAt, 'PPpp')}</div>
           </div>
           <div>
             <div className="text-sm text-muted-foreground">Status</div>
