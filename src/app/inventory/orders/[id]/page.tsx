@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Printer, Pencil, CheckCircle2, XCircle, PackageCheck, FileText, Download } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useUsers } from '@/context/users-context';
 import type { OrderItem } from '@/context/orders-context';
 import { useInventory } from '@/context/inventory-context';
@@ -289,17 +289,7 @@ export default function OrderDetailPage() {
     const residenceHeaderText = cityText ? `${cityText}: ${residenceNameText}` : residenceNameText;
 
     // Safely format Firestore Timestamp | Date | string
-    const formattedOrderDate = (() => {
-        try {
-            const d: any = (order as any)?.date;
-            if (!d) return '—';
-            const jsDate: Date = typeof d?.toDate === 'function' ? d.toDate() : (d instanceof Date ? d : new Date(d));
-            if (!jsDate || isNaN(jsDate.getTime())) return '—';
-            return format(jsDate, 'PPP');
-        } catch {
-            return '—';
-        }
-    })();
+    const formattedOrderDate = safeFormat((order as any)?.date, 'PPP');
 
     return (
         <div className="space-y-6">
@@ -611,13 +601,7 @@ export default function OrderDetailPage() {
                                                 const en = splitNameDetail(it.nameEn);
                                                 const key = it.id || `unknown-${idx}`;
                                                 const dates = lastDates[key] || {};
-                                                const fmt = (d?: Date | null) => {
-                                                    try {
-                                                        return d && !isNaN(d.getTime()) ? format(d, 'PPP') : '—';
-                                                    } catch {
-                                                        return '—';
-                                                    }
-                                                };
+                                                const fmt = (d?: Date | null) => safeFormat(d, 'PPP');
                                                 return (
                                                     <TableRow key={`${key}-${idx}`}>
                                                         <TableCell className="font-medium">{en.base || it.nameEn} | {ar.base || it.nameAr}</TableCell>
@@ -655,10 +639,7 @@ export default function OrderDetailPage() {
                                     </p>
                                     <p className="text-sm text-muted-foreground">
                                         {order.approvalAttachmentUploadedAt && 
-                                            `Uploaded: ${format(
-                                                order.approvalAttachmentUploadedAt.toDate(),
-                                                'PPp'
-                                            )}`
+                                            `Uploaded: ${safeFormat(order.approvalAttachmentUploadedAt, 'PPp')}`
                                         }
                                     </p>
                                 </div>

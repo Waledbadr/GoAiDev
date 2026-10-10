@@ -10,7 +10,7 @@ import { useResidences } from "@/context/residences-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { format } from "date-fns";
+import { safeFormat } from "@/lib/date-utils";
 import { Badge } from "@/components/ui/badge";
 import { useLanguage } from "@/context/language-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -288,7 +288,7 @@ function ItemMovementContent() {
                         className="cursor-pointer hover:bg-accent/30"
                         onClick={() => openTxDetails(tx)}
                       >
-                        <TableCell>{format(tx.date.toDate(), "PPP p")}</TableCell>
+                        <TableCell>{safeFormat(tx.date, "PPP p")}</TableCell>
                         <TableCell className="font-medium">
                           {renderTransactionDetails(tx)}
                         </TableCell>
@@ -344,7 +344,7 @@ function ItemMovementContent() {
                 {dict.typeLabel}: <span className="font-medium text-foreground">{selectedTx.type}</span>
               </div>
               <div>
-                {dict.date}: {selectedTx.date?.toDate ? format(selectedTx.date.toDate(), "PPP p") : ""}
+                {dict.date}: {safeFormat(selectedTx.date, "PPP p", undefined, "")}
               </div>
               <div>
                 {dict.referenceLabel}: <span className="font-mono">{selectedTx.referenceDocId || "—"}</span>

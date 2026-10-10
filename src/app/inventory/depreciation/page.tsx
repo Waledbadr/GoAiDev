@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertTriangle, Trash2, Package, Clock, FileText } from 'lucide-react';
-import { format } from 'date-fns';
+import { safeFormat, parseSafeDate } from '@/lib/date-utils';
 import type { DepreciationRequest } from '@/context/inventory-context';
 
 interface DepreciationForm extends Omit<DepreciationRequest, 'locationId' | 'locationName'> {
@@ -113,7 +113,7 @@ export default function DepreciationPage() {
             t.type === 'DEPRECIATION' && 
             userResidenceIds.includes(t.residenceId)
           )
-          .sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime())
+          .sort((a, b) => (parseSafeDate(b.date)?.getTime() || 0) - (parseSafeDate(a.date)?.getTime() || 0))
           .slice(0, 10);
         setRecentDepreciations(depreciationTransactions);
       } catch (error) {
@@ -217,7 +217,7 @@ export default function DepreciationPage() {
           t.type === 'DEPRECIATION' && 
           userResidenceIds.includes(t.residenceId)
         )
-        .sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime())
+        .sort((a, b) => (parseSafeDate(b.date)?.getTime() || 0) - (parseSafeDate(a.date)?.getTime() || 0))
         .slice(0, 10);
       setRecentDepreciations(depreciationTransactions);
 
@@ -596,7 +596,7 @@ export default function DepreciationPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-xs p-2 text-gray-500 dark:text-gray-400">
-                            {format(transaction.date.toDate(), 'MMM dd')}
+                            {safeFormat(transaction.date, 'MMM dd')}
                           </TableCell>
                         </TableRow>
                       ))}

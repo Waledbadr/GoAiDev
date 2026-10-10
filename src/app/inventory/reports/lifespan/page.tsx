@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useInventory, type InventoryTransaction } from '@/context/inventory-context';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, differenceInDays } from 'date-fns';
+import { parseSafeDate } from '@/lib/date-utils';
 import { useLanguage } from '@/context/language-context';
 
 interface LifespanException {
@@ -68,8 +69,9 @@ export default function LifespanReportPage() {
                 const latestTx = group[i];
                 const previousTx = group[i+1];
 
-                const latestDate = latestTx.date.toDate();
-                const previousDate = previousTx.date.toDate();
+                const latestDate = parseSafeDate(latestTx.date);
+                const previousDate = parseSafeDate(previousTx.date);
+                if (!latestDate || !previousDate) continue;
                 const actualDays = differenceInDays(latestDate, previousDate);
 
                 if (actualDays < itemInfo.lifespanDays) {

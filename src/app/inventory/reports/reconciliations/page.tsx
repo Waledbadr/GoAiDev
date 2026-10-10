@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useLanguage } from '@/context/language-context';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { parseSafeDate } from '@/lib/date-utils';
 
 export default function ReconciliationsListPage() {
   const { getAllReconciliations } = useInventory();
@@ -78,7 +79,7 @@ export default function ReconciliationsListPage() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((r) => {
-                    const d = r.date?.toDate?.() ? r.date.toDate() : new Date();
+                    const d = parseSafeDate(r.date) || new Date();
                     const residenceName = residenceNameById.get(String(r.residenceId)) || String(r.residenceId);
                     return (
                       <TableRow key={r.id}>

@@ -11,6 +11,7 @@ import { useResidences } from './residences-context';
 import { useUsers } from './users-context';
 import { useNotifications } from './notifications-context';
 import type { DocumentReference } from 'firebase/firestore';
+import { parseSafeDate } from '@/lib/date-utils';
 
 
 export interface OrderItem extends InventoryItem {
@@ -127,7 +128,20 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     try {
       const d1Orders = await d1Client.getDocs<Order>('orders');
       if (d1Orders && d1Orders.length > 0) {
-        setOrders(d1Orders);
+        const normalized = d1Orders.map((o: any) => {
+          const d = parseSafeDate(o.date) || new Date();
+          return {
+            ...o,
+            date: {
+              seconds: Math.floor(d.getTime() / 1000),
+              nanoseconds: (d.getTime() % 1000) * 1_000_000,
+              toDate: () => d,
+              toMillis: () => d.getTime(),
+              toISOString: () => d.toISOString(),
+            },
+          };
+        });
+        setOrders(normalized);
       }
     } catch (e) {
       console.warn('D1 orders fetch error:', e);

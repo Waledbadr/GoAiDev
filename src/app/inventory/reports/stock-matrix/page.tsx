@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { normalizeText, includesNormalized } from "@/lib/utils";
 import { AR_SYNONYMS, buildNormalizedSynonyms } from "@/lib/aliases";
 import { useToast } from "@/hooks/use-toast";
+import { safeFormat } from "@/lib/date-utils";
 
 export default function StockMatrixReportPage() {
   const { items, loading, getAllInventoryTransactions } = useInventory() as any;
@@ -582,7 +583,7 @@ export default function StockMatrixReportPage() {
                     <TableRow key={`${t.id || t.referenceDocId || 'row'}-${idx}`}>
                       <TableCell>{movementTypeLabel(t.type)}</TableCell>
                       <TableCell className="text-right tabular-nums">{Number(t.quantity).toLocaleString()}</TableCell>
-                      <TableCell>{t.date?.toDate ? new Date(t.date.toDate()).toLocaleString() : ''}</TableCell>
+                      <TableCell>{safeFormat(t.date, 'PPP p', undefined, '')}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

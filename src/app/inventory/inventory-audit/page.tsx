@@ -23,6 +23,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { normalizeText, includesNormalized } from '@/lib/utils';
+import { parseSafeDate } from '@/lib/date-utils';
 import { AR_SYNONYMS, buildNormalizedSynonyms } from '@/lib/aliases';
 
 export default function StockReconciliationPage() {
@@ -550,7 +551,7 @@ export default function StockReconciliationPage() {
                 </TableHeader>
                 <TableBody>
                   {recons.map((r) => {
-                    const d = r.date?.toDate?.() ? r.date.toDate() : new Date();
+                    const d = parseSafeDate(r.date) || new Date();
                     return (
                       <TableRow key={r.id} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800" onClick={() => openDetails(r)}>
                         <TableCell>{d.toLocaleString()}</TableCell>

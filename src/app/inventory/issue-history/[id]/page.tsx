@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Printer, Edit } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useResidences } from '@/context/residences-context';
 import { useUsers } from '@/context/users-context';
 
@@ -202,7 +202,7 @@ export default function MIVDetailPage() {
                         </div>
                         <div className="text-right">
                             <p className="font-semibold print-subtle" style={{ fontWeight: 700 }}>{residenceName}</p>
-                            <p className="text-sm text-muted-foreground print-subtle">Date: {format(miv.date.toDate(), 'PPP p')}</p>
+                            <p className="text-sm text-muted-foreground print-subtle">Date: {safeFormat(miv.date, 'PPP p')}</p>
                         </div>
                     </div>
                 </CardHeader>

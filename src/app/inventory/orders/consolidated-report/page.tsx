@@ -6,7 +6,7 @@ import { useOrders, type Order, type OrderItem } from '@/context/orders-context'
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Printer, Loader2, LayoutGrid, List } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useUsers } from '@/context/users-context';
 
 interface AggregatedItem {
@@ -773,7 +773,7 @@ export default function ConsolidatedReportPage() {
                                         border: '1px solid #ffeeba',
                                         whiteSpace: 'nowrap'
                                     }}>
-                                        {format(new Date(), 'MMM do, yyyy')}
+                                        {safeFormat(new Date(), 'MMM do, yyyy')}
                                     </div>
                                 </div>
                             </div>
@@ -1340,7 +1340,7 @@ export default function ConsolidatedReportPage() {
                                                                 fontSize: '14px',
                                                                 color: '#1f2937'
                                                             }}>
-                                                                {format(order.date.toDate(), 'PPP')}
+                                                                {safeFormat(order.date, 'PPP')}
                                                             </div>
                                                         </div>
                                                     </div>

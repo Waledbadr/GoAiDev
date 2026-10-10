@@ -6,6 +6,7 @@ import { db, auth } from '@/lib/firebase';
 import { d1Client } from '@/lib/d1-client';
 import { collection, onSnapshot, doc, setDoc, Unsubscribe, addDoc, updateDoc, Timestamp, getDocs, query, where, deleteDoc, runTransaction } from "firebase/firestore";
 import { onAuthStateChanged } from 'firebase/auth';
+import { parseSafeDate } from '@/lib/date-utils';
 
 export type MaintenanceStatus = 'Pending' | 'In Progress' | 'Completed' | 'Cancelled';
 export type MaintenancePriority = 'Low' | 'Medium' | 'High';
@@ -92,7 +93,20 @@ export const MaintenanceProvider = ({ children }: { children: ReactNode }) => {
       try {
         const d1Reqs = await d1Client.getDocs<MaintenanceRequest>('maintenanceRequests');
         if (d1Reqs) {
-          setRequests(d1Reqs);
+          const normalized = d1Reqs.map((r: any) => {
+            const d = parseSafeDate(r.date) || new Date();
+            return {
+              ...r,
+              date: {
+                seconds: Math.floor(d.getTime() / 1000),
+                nanoseconds: (d.getTime() % 1000) * 1_000_000,
+                toDate: () => d,
+                toMillis: () => d.getTime(),
+                toISOString: () => d.toISOString(),
+              },
+            };
+          });
+          setRequests(normalized);
         }
       } catch (err) {
         console.warn('D1 maintenance requests fetch notice:', err);

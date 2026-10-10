@@ -11,7 +11,7 @@ import { useOrders, type Order, type OrderStatus } from "@/context/orders-contex
 import { useEffect, useState, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useRouter } from "next/navigation";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useUsers } from "@/context/users-context";
@@ -148,7 +148,7 @@ export default function PurchaseOrdersPage() {
                                 )}
                             </div>
                         </TableCell>
-                        <TableCell className="cursor-pointer" onClick={() => router.push(`/inventory/orders/${order.id}`)}>{format(order.date.toDate(), 'PPP')}</TableCell>
+                        <TableCell className="cursor-pointer" onClick={() => router.push(`/inventory/orders/${order.id}`)}>{safeFormat(order.date, 'PPP')}</TableCell>
                         <TableCell className="cursor-pointer" onClick={() => router.push(`/inventory/orders/${order.id}`)}>{order.residence}</TableCell>
                         <TableCell className="cursor-pointer" onClick={() => router.push(`/inventory/orders/${order.id}`)}>{order.items.length}</TableCell>
                         <TableCell className="cursor-pointer" onClick={() => router.push(`/inventory/orders/${order.id}`)}>

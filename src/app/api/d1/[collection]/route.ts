@@ -61,7 +61,7 @@ export async function GET(req: NextRequest, context: any) {
     }
 
     if (!doc) {
-      return NextResponse.json({ ok: false, error: 'Document not found' }, { status: 404 });
+      return NextResponse.json({ ok: true, doc: null, error: 'Document not found' });
     }
     return NextResponse.json({ ok: true, doc });
   }

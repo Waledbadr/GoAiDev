@@ -18,6 +18,7 @@ import { parseSafeDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 import { collection, query, where, getDocs, orderBy, limit, getCountFromServer } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
+import { d1Client } from '@/lib/d1-client';
 import { getEffectiveContractStatus } from '@/types/contracts';
 import { getTransactionTypeDef } from '@/types/income-expense-transactions';
 
@@ -135,8 +136,77 @@ async function fetchModuleStats(): Promise<ModuleStats | null> {
     }
     return stats;
   } catch (err) {
-    console.error('Failed to fetch module stats:', err);
-    return null;
+    console.warn('Firestore module stats query failed (quota or network), falling back to D1:', err);
+    try {
+      const [mReqs, ords, svcs, usrs, occs] = await Promise.all([
+        d1Client.getDocs<any>('maintenanceRequests'),
+        d1Client.getDocs<any>('orders'),
+        d1Client.getDocs<any>('serviceOrders'),
+        d1Client.getDocs<any>('users'),
+        d1Client.getDocs<any>('occupants'),
+      ]);
+
+      const mntPending = mReqs.filter(r => r.status === 'Pending').length;
+      const mntInProgress = mReqs.filter(r => r.status === 'In Progress').length;
+      const mntCompleted = mReqs.filter(r => r.status === 'Completed').length;
+      const mntCancelled = mReqs.filter(r => r.status === 'Cancelled').length;
+      const mntHighPriority = mReqs.filter(r => r.priority === 'High').length;
+
+      const ordPending = ords.filter(o => o.status === 'Pending').length;
+      const ordApproved = ords.filter(o => o.status === 'Approved').length;
+      const ordPartial = ords.filter(o => o.status === 'Partially Delivered').length;
+      const ordDelivered = ords.filter(o => o.status === 'Delivered').length;
+
+      const svcDispatched = svcs.filter(s => ['DISPATCHED', 'PARTIAL_RETURN'].includes(s.status)).length;
+      const svcCompleted = svcs.filter(s => s.status === 'COMPLETED').length;
+
+      const usrAdmin = usrs.filter(u => u.role === 'Admin').length;
+      const usrSupervisor = usrs.filter(u => u.role === 'Supervisor').length;
+      const usrTechnician = usrs.filter(u => u.role === 'Technician').length;
+      const usrWorker = usrs.filter(u => u.role === 'Worker').length;
+
+      const activeOccs = occs.filter(o => !o.until);
+      const residenceOccupancy: Record<string, number> = {};
+      activeOccs.forEach(o => {
+        if (o.residenceId) residenceOccupancy[o.residenceId] = (residenceOccupancy[o.residenceId] || 0) + 1;
+      });
+
+      const stats: ModuleStats = {
+        maintenanceByStatus: [
+          { name: 'Pending', value: mntPending },
+          { name: 'In Progress', value: mntInProgress },
+          { name: 'Completed', value: mntCompleted },
+          { name: 'Cancelled', value: mntCancelled },
+        ],
+        maintenanceOpen: mntPending + mntInProgress,
+        maintenanceHighPriority: mntHighPriority,
+        ordersPending: ordPending,
+        ordersInDelivery: ordApproved + ordPartial,
+        ordersDelivered: ordDelivered,
+        serviceOrdersDispatched: svcDispatched,
+        serviceOrdersCompleted: svcCompleted,
+        usersByRole: [
+          { name: 'Admin', value: usrAdmin },
+          { name: 'Supervisor', value: usrSupervisor },
+          { name: 'Technician', value: usrTechnician },
+          { name: 'Worker', value: usrWorker },
+        ],
+        usersTotal: usrAdmin + usrSupervisor + usrTechnician + usrWorker,
+        usersAdmins: usrAdmin,
+        residenceOccupancy,
+        totalActiveOccupants: activeOccs.length,
+      };
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(MODULE_STATS_CACHE_KEY, JSON.stringify({ data: stats, timestamp: Date.now() }));
+        } catch {}
+      }
+      return stats;
+    } catch (d1Err) {
+      console.warn('D1 module stats fallback error:', d1Err);
+      return null;
+    }
   }
 }
 
@@ -240,7 +310,18 @@ function DashboardContent() {
         const todayStr = format(new Date(), 'yyyy-MM-dd');
         setTodayRecords(records.filter(r => r.date === todayStr));
       } catch (err) {
-        console.error('Failed to fetch attendance for dashboard:', err);
+        console.warn('Failed to fetch attendance from Firestore, checking D1:', err);
+        try {
+          const sevenDaysAgo = format(subDays(new Date(), 6), 'yyyy-MM-dd');
+          const d1Records = await d1Client.getDocs<any>('attendanceRecords', { startDate: sevenDaysAgo });
+          if (d1Records && d1Records.length > 0) {
+            setTimesheet7Days(d1Records);
+            const todayStr = format(new Date(), 'yyyy-MM-dd');
+            setTodayRecords(d1Records.filter(r => r.date === todayStr));
+          }
+        } catch (d1Err) {
+          console.warn('D1 attendance fetch error:', d1Err);
+        }
       }
     };
     fetchAttendance();

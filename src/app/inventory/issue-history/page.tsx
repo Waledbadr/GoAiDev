@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useInventory, type MIV } from "@/context/inventory-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
-import { format } from 'date-fns';
+import { safeFormat } from '@/lib/date-utils';
 import { useResidences } from '@/context/residences-context';
 import { useUsers } from '@/context/users-context';
 import { LocationBreadcrumb } from '@/components/ui/location-breadcrumb';
@@ -86,7 +86,7 @@ export default function MIVHistoryPage() {
                             {loading || residencesLoading ? renderSkeleton() : filteredMIVs.length > 0 ? filteredMIVs.map((miv) => (
                                 <TableRow key={miv.id} className="cursor-pointer" onClick={() => router.push(`/inventory/issue-history/${miv.id}`)}>
                                     <TableCell className="font-medium">{formatMivId(miv.id)}</TableCell>
-                                    <TableCell>{format(miv.date.toDate(), 'PPP p')}</TableCell>
+                                    <TableCell>{safeFormat(miv.date, 'PPP p')}</TableCell>
                                     <TableCell>{getResidenceName(miv.residenceId)}</TableCell>
                                     <TableCell><LocationBreadcrumb path={miv.locationName} /></TableCell>
                                     <TableCell>{miv.itemCount}</TableCell>

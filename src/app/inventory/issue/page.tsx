@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useRouter } from 'next/navigation';
 import { differenceInDays } from 'date-fns';
+import { parseSafeDate } from '@/lib/date-utils';
 import { Input } from '@/components/ui/input';
 import { useLanguage } from '@/context/language-context';
 import { useOrders, type Order } from '@/context/orders-context';
@@ -357,7 +358,8 @@ export default function IssueMaterialPage() {
             if (itemToAdd.lifespanDays && itemToAdd.lifespanDays > 0) {
                 const lastIssueDate = await getLastIssueDateForItemAtLocation(itemToAdd.id, locationId);
                 if (lastIssueDate) {
-                    const daysSinceLastIssue = differenceInDays(new Date(), lastIssueDate.toDate());
+                    const lastDate = parseSafeDate(lastIssueDate);
+                    const daysSinceLastIssue = lastDate ? differenceInDays(new Date(), lastDate) : Infinity;
                     if (daysSinceLastIssue < itemToAdd.lifespanDays) {
                         toast({
                             title: "Lifespan Warning",

@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Filter, TrendingUp, Download, Search, Calendar as CalendarIcon } from 'lucide-react';
 import { format, startOfDay, endOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears } from 'date-fns';
-import { safeFormat } from '@/lib/date-utils';
+import { safeFormat, parseSafeDate } from '@/lib/date-utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import Link from 'next/link';
 import { useLanguage } from '@/context/language-context';
@@ -229,15 +229,20 @@ export default function StockMovementReportPage() {
         if (filters.itemId && transaction.itemId !== filters.itemId) keep = false;
 
         // Date filtering
-        if (filters.startDate) {
-            const startDate = new Date(filters.startDate);
-            startDate.setHours(0, 0, 0, 0);
-            if (transaction.date.toDate() < startDate) keep = false;
-        }
-        if (filters.endDate) {
-            const endDate = new Date(filters.endDate);
-            endDate.setHours(23, 59, 59, 999);
-            if (transaction.date.toDate() > endDate) keep = false;
+        const txDate = parseSafeDate(transaction.date);
+        if (!txDate) {
+            keep = false;
+        } else {
+            if (filters.startDate) {
+                const startDate = new Date(filters.startDate);
+                startDate.setHours(0, 0, 0, 0);
+                if (txDate < startDate) keep = false;
+            }
+            if (filters.endDate) {
+                const endDate = new Date(filters.endDate);
+                endDate.setHours(23, 59, 59, 999);
+                if (txDate > endDate) keep = false;
+            }
         }
         
         // Location filtering by IDs when any of building/floor/room is selected
